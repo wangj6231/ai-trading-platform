@@ -1,0 +1,56 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.kdbx
+
+# Python
+__pycache__/
+*.py[cod]
+.coverage*
+htmlcov/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+coverage/
+*.tsbuildinfo
+playwright-report/
+test-results/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Local runtime data
+*.log
+tmp/
+*.db
+*.sqlite
+*.sqlite3
+*.dump
+*.bak
+
+# Raw or third-party research material
+# Keep reproducibility scripts and curated Markdown reports in Git. Generated
+# measurements remain local because they include raw provider data, machine
+# paths, large hash manifests, profiler output, and noisy secret-scan matches.
+docs/references/
+docs/remediations/
+AUDIT_REPORT*.md
+experiments/**
+!experiments/**/
+!experiments/**/*.py
+!experiments/**/*.md

@@ -1,0 +1,146 @@
+# Canonical deterministic strategy manifest.
+# Every numeric value remains an empirically UNVALIDATED ENGINEERING_PARAMETER.
+# YAML anchors reduce duplication only; the validated runtime value contains one
+# complete immutable pipeline per supported symbol.
+schema_version: "1"
+execution:
+  policy: "CONSERVATIVE_MARKET_FILL"
+  costs:
+    commission_bps_per_side: "0"
+    spread_bps: "0"
+    slippage_bps_per_side: "0"
+pipelines:
+  BTCUSDT: &crypto_pipeline
+    signal_timeframe: "1m"
+    macd:
+      fast_period: 2
+      slow_period: 3
+      signal_period: 2
+    atr:
+      period: 2
+      smoothing: "WILDER"
+    market_structure:
+      "3m": &market_structure
+        tick_size: "0.01"
+        swing_left_bars: 1
+        swing_right_bars: 1
+        swing_tie_policy: "STRICT"
+        trend_points_per_side: 2
+        structure_equality_tolerance_ticks: 0
+        structure_break_basis: "CLOSE"
+        structure_break_buffer_ticks: 0
+        zone_merge_tolerance_ticks: 0
+        zone_padding_ticks: 0
+      "1m": *market_structure
+    liquidity:
+      tick_size: "0.01"
+      liquidity_include_single_swing_pools: true
+      liquidity_single_pool_half_width_ticks: 1
+      liquidity_equal_tolerance_ticks: "0"
+      liquidity_relative_equal_atr_ratio: "0"
+      liquidity_cluster_min_touches: 2
+      liquidity_cluster_padding_ticks: 0
+      liquidity_sweep_min_penetration_ticks: 0
+      liquidity_taken_buffer_ticks: 0
+      liquidity_pool_max_age_bars: 100
+      signal_allow_dual_sweep: false
+    fvg:
+      tick_size: "0.01"
+      fvg_min_gap_ticks: 1
+      fvg_min_gap_atr_ratio: "0"
+      fvg_require_middle_candle_direction: true
+      fvg_fill_basis: "WICK"
+      fvg_full_fill_fraction: "1"
+      fvg_max_age_bars: 100
+      fvg_max_retests: 100
+      ifvg_enabled: false
+      ifvg_inversion_buffer_ticks: 0
+    displacement:
+      tick_size: "0.01"
+      displacement_atr_period: 2
+      displacement_max_bars: 2
+      displacement_net_atr_ratio: "2"
+      displacement_body_atr_ratio: "2"
+      displacement_min_body_efficiency: "0.8"
+      displacement_max_adverse_atr_ratio: "0.1"
+      displacement_require_fvg: true
+    order_block:
+      tick_size: "0.01"
+      ob_search_lookback_bars: 3
+      ob_require_displacement: false
+      ob_require_context: false
+      ob_context_proximity_ticks: 0
+      ob_context_proximity_atr_ratio: "0"
+      ob_candidate_rank_policy: "EXTREME_THEN_BODY"
+      ob_zone_basis: "BODY"
+      ob_validation_buffer_ticks: 0
+      ob_validation_max_bars: 3
+      ob_require_midpoint_hold: false
+      ob_midpoint_probe_basis: "CLOSE"
+      ob_invalidation_basis: "CLOSE"
+      ob_invalidation_buffer_ticks: 0
+      ob_max_age_bars: 100
+      breaker_enabled: false
+      breaker_retest_max_bars: 3
+    entry_setup:
+      tick_size: "0.01"
+      signal_allow_dual_sweep: false
+      signal_max_bars_sweep_to_mss: 5
+      signal_max_bars_mss_to_displacement: 5
+      signal_max_bars_fvg_to_retest: 5
+      signal_fvg_selection_policy: "FIRST_CONFIRMED"
+      signal_retest_mode: "TOUCH"
+      signal_entry_zone_source: "FVG"
+      signal_allow_zero_width_entry_zone: false
+      signal_setup_max_total_bars: 20
+      setup_invalidation_source: "LIQUIDITY_SWEEP_EXTREME"
+      setup_invalidation_buffer_ticks: 0
+      setup_invalidation_buffer_atr_ratio: "0"
+    multi_timeframe:
+      mtf_source_timeframe: "1m"
+      mtf_target_timeframes: ["3m", "1m"]
+      mtf_gap_policy: "REQUIRE_CONTIGUOUS"
+      mtf_session_calendar_id: null
+      mtf_required_timeframes: ["3m"]
+      mtf_min_aligned_timeframes: 1
+      mtf_veto_timeframes: ["3m"]
+      mtf_signal_timeframe: "1m"
+      mtf_require_signal_timeframe_alignment: false
+      mtf_state_max_age_bars:
+        "3m": 100
+        "1m": 100
+      mtf_require_price_array_gate: false
+      mtf_dealing_range_timeframe: "3m"
+      mtf_dealing_range_max_span_bars: 3
+      mtf_price_array_probe: "MIDPOINT"
+    signal_score:
+      metadata:
+        empirical_validation_status: "UNVALIDATED"
+      signal:
+        long_threshold: 5
+        short_threshold: -5
+        veto_on_htf_conflict: true
+      weights:
+        macd: 1
+        bos: 2
+        mss: 2
+        liquidity_sweep: 2
+        fvg: 1
+        order_block: 1
+        displacement: 2
+        support_resistance: 1
+        htf_alignment: 2
+      crt:
+        enabled: false
+        signal_uses: []
+        weight: null
+    risk:
+      entry_reference: "MIDPOINT"
+      stop_buffer_ticks: 0
+      atr_buffer: "0.2"
+      min_distance_ticks: 1
+      max_distance_atr_ratio: "10"
+      target_source: "NEAREST_OPPOSING_LIQUIDITY"
+      target_min_distance_ticks: 1
+      min_rr: "1.5"
+  ETHUSDT: *crypto_pipeline

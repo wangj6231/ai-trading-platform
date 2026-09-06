@@ -1,0 +1,8 @@
+name: ai-trading-platform
+
+# Explicit local-development overlay. Use together with docker-compose.yml only
+# when a developer needs direct host access to PostgreSQL.
+services:
+  postgres:
+    ports:
+      - "127.0.0.1:${POSTGRES_DEV_PORT:-5432}:5432"

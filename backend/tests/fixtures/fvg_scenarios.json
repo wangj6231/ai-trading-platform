@@ -1,0 +1,24 @@
+{
+  "bullish": [
+    {"timestamp":"2025-04-01T00:00:00Z","open":"100","high":"101","low":"99","close":"100","volume":"1"},
+    {"timestamp":"2025-04-01T00:01:00Z","open":"100","high":"105","low":"100","close":"104","volume":"1"},
+    {"timestamp":"2025-04-01T00:02:00Z","open":"104","high":"106","low":"103","close":"105","volume":"1"},
+    {"timestamp":"2025-04-01T00:03:00Z","open":"105","high":"105","low":"102","close":"104","volume":"1"},
+    {"timestamp":"2025-04-01T00:04:00Z","open":"104","high":"104","low":"101","close":"102","volume":"1"}
+  ],
+  "bearish": [
+    {"timestamp":"2025-04-01T00:00:00Z","open":"106","high":"108","low":"105","close":"107","volume":"1"},
+    {"timestamp":"2025-04-01T00:01:00Z","open":"106","high":"107","low":"101","close":"102","volume":"1"},
+    {"timestamp":"2025-04-01T00:02:00Z","open":"102","high":"103","low":"99","close":"100","volume":"1"},
+    {"timestamp":"2025-04-01T00:03:00Z","open":"100","high":"104","low":"99","close":"101","volume":"1"},
+    {"timestamp":"2025-04-01T00:04:00Z","open":"101","high":"105","low":"100","close":"104","volume":"1"}
+  ],
+  "bullish_inversion": [
+    {"timestamp":"2025-04-01T00:00:00Z","open":"100","high":"101","low":"99","close":"100","volume":"1"},
+    {"timestamp":"2025-04-01T00:01:00Z","open":"100","high":"105","low":"100","close":"104","volume":"1"},
+    {"timestamp":"2025-04-01T00:02:00Z","open":"104","high":"106","low":"103","close":"105","volume":"1"},
+    {"timestamp":"2025-04-01T00:03:00Z","open":"104","high":"104","low":"98","close":"99","volume":"1"},
+    {"timestamp":"2025-04-01T00:04:00Z","open":"99","high":"102","low":"98","close":"100","volume":"1"},
+    {"timestamp":"2025-04-01T00:05:00Z","open":"100","high":"105","low":"100","close":"104","volume":"1"}
+  ]
+}

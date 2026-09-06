@@ -1,0 +1,77 @@
+name: ai-trading-platform
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+    environment:
+      BACKEND_API_URL: http://backend:8000
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      APP_NAME: ${APP_NAME:-AI Trading Platform API}
+      APP_VERSION: ${APP_VERSION:-0.1.0}
+      APP_ENV: ${APP_ENV:-development}
+      APP_LOG_LEVEL: ${APP_LOG_LEVEL:-INFO}
+      APP_TIMEZONE: ${APP_TIMEZONE:-UTC}
+      API_V1_PREFIX: ${API_V1_PREFIX:-/api/v1}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-ai_trading}:${POSTGRES_PASSWORD:-change-me-local-only}@postgres:5432/${POSTGRES_DB:-ai_trading}
+      DATABASE_ECHO: ${DATABASE_ECHO:-false}
+      MARKET_DATA_DEFAULT_LIMIT: ${MARKET_DATA_DEFAULT_LIMIT:-500}
+      MARKET_DATA_MAX_LIMIT: ${MARKET_DATA_MAX_LIMIT:-1000}
+      MARKET_DATA_REQUEST_TIMEOUT_SECONDS: ${MARKET_DATA_REQUEST_TIMEOUT_SECONDS:-10}
+      BINANCE_PUBLIC_BASE_URL: ${BINANCE_PUBLIC_BASE_URL:-https://api.binance.com}
+      STRATEGY_CONFIG_PATH: ${STRATEGY_CONFIG_PATH:-/app/config/strategy.yaml}
+      STRATEGY_MARKET_DATA_LIMIT: ${STRATEGY_MARKET_DATA_LIMIT:-1000}
+      STRATEGY_MARKET_DATA_MAX_STALENESS_SECONDS: ${STRATEGY_MARKET_DATA_MAX_STALENESS_SECONDS:-120}
+      STRATEGY_RESEARCH_CUTOFF_ENABLED: ${STRATEGY_RESEARCH_CUTOFF_ENABLED:-false}
+      STRATEGY_RESEARCH_CUTOFF_TOKEN: ${STRATEGY_RESEARCH_CUTOFF_TOKEN:-}
+      OPENAI_VALIDATION_ENABLED: ${OPENAI_VALIDATION_ENABLED:-false}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-}
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health/ready', timeout=3)
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ai_trading}
+      POSTGRES_USER: ${POSTGRES_USER:-ai_trading}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-local-only}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
