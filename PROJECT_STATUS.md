@@ -29,6 +29,11 @@ browser cases passing. This record is evidence for engineering invariants, not
 evidence of strategy profitability or live execution quality. See the
 public-safe [verification summary](VERIFICATION.md).
 
+The initial GitHub publication CI then passed 899 backend tests against its
+PostgreSQL 16 service at 90.90% line coverage. Frontend CI passed 69
+unit/component tests at 83.76% statements/lines, 77.37% branches, and 89.13%
+functions; all 74 Chromium cases and the production build also passed.
+
 ## Publication safety review
 
 - Repository candidates are filtered by `.gitignore` to exclude local secrets,

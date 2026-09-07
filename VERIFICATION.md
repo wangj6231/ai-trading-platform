@@ -57,6 +57,19 @@ the real-PostgreSQL regression that attempts a direct SQL rewrite of a terminal
 signal's `take_profit`. Both temporary audit listeners were confirmed closed
 after testing.
 
+The first GitHub Actions run completed successfully on the publication commit:
+
+| GitHub publication gate | Result |
+| --- | ---: |
+| Backend with PostgreSQL 16 service | 899 passed |
+| Backend line coverage | 90.90% |
+| Frontend unit/component tests | 69 passed |
+| Frontend statements/lines coverage | 83.76% |
+| Frontend branch coverage | 77.37% |
+| Frontend function coverage | 89.13% |
+| Chromium browser cases | 74 passed |
+| Frontend production build | passed |
+
 ## Reproduce
 
 On Windows PowerShell, with an isolated PostgreSQL test URL set for integration
