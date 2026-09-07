@@ -48,6 +48,34 @@ the sealed reference/P1 identities are recorded separately, never impersonated.
 Initial exploratory R1 evidence is archived as `initial_attempt_*`; it is not
 the final-build R1 result. Only executed comparisons can receive PASS.
 
+### Numeric, dependency and output inventory
+
+All prices and recursive indicator values retain Decimal semantics; timestamps
+are the reference UTC types. No floating-point approximation or reordered
+summation is used to make differential comparisons pass. The source is closed
+1m candles; structure is maintained separately for every configured target
+timeframe (the frozen configuration uses 1m/3m). Other signal features consume
+the configured signal timeframe, not independently supplied exchange HTF bars.
+
+| Stage | Typed output | Required history / known-at dependency |
+| --- | --- | --- |
+| Indicators | IndicatorAnalysis | Configured seeds/periods, exact previous EMA/ATR and all historical points; each point only after its candle closes |
+| Swings/structure/SR | MarketStructureResult | Configured left/right windows; all candidates and confirmed events retained; pivot time differs from right-window confirmation; latest unbroken swing and trend use only eligible confirmations |
+| Liquidity | LiquidityAnalysisResult | All relevant cluster members/pools/history, ATR at confirmation, existing configured lifetime; later members change current pool, not `snapshot_at` for an earlier cutoff |
+| FVG/IFVG | FVGAnalysisResult | Three closed candles for formation, configured ATR/lifetime/retests, all terminal history; current-zone lifecycle legitimately changes with newly closed candles |
+| Displacement | DisplacementAnalysisResult | Existing ATR period and maximum leg bars, confirmed structure/FVG links; pending evaluations may resolve later; no future confirmed FVG preloading |
+| OB | OrderBlockAnalysisResult | Existing search/validation/age/retest parameters, confirmation-indexed structure and liquidity snapshots; no newly invented window; delayed-displacement/breaker configurations use full reference |
+| ICT | EntrySetupAnalysisResult | Existing sweep-to-MSS/displacement/retest windows and setup lifetime; linked zone representation and expiry context can change on later evaluations, so reference recomputation remains |
+| MTF | MTFAnalysisResult | Complete UTC target intervals only; configured alignment, freshness, dealing-range windows and gates unchanged |
+| Score | SignalScoreResult | Current typed evidence and unchanged configured weights; shared pure function |
+| Risk | RiskPlan | Current setup invalidation, ATR and available structural targets; shared pure function with one TP and SL |
+
+Returning updated current state at T+1 must not mutate a previously returned
+evaluation at T. Result collections are freshly projected/copied while retained
+states are append-updated. Both old-result immutability and prefix replay are
+tested. No serialized-state migration or concurrent shared-instance safety is
+claimed in this phase.
+
 ## Scope
 
 P3 adds a third, explicitly named replay path for incremental deterministic

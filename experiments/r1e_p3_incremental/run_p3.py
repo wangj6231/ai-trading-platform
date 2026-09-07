@@ -147,7 +147,7 @@ class Observer:
 
     def result(self, status):
         elapsed = time.perf_counter() - self.started
-        return {"status": status, "evaluations_completed": self.count, "expected_evaluations": 129600, "elapsed_seconds": elapsed, "engine_seconds": self.engine_seconds, "runner_validation_observation_seconds": elapsed - self.engine_seconds, "cpu_seconds": time.process_time() - self.cpu_started, "evaluations_per_second": self.count / elapsed, "seconds_per_evaluation": elapsed / self.count if self.count else None, "windows": self.windows, "checkpoints": self.rows, "samples": self.samples, "partial_outputs_interpreted": False}
+        return {"status": status, "evaluations_completed": self.count, "expected_evaluations": 129600, "percent_completed": self.count / 129600 * 100, "elapsed_seconds": elapsed, "engine_seconds": self.engine_seconds, "runner_validation_observation_seconds": elapsed - self.engine_seconds, "cpu_seconds": time.process_time() - self.cpu_started, "evaluations_per_second": self.count / elapsed, "seconds_per_evaluation": elapsed / self.count if self.count else None, "linear_projection_single_run_seconds": elapsed / self.count * 129600 if self.count else None, "linear_projection_two_runs_seconds": elapsed / self.count * 259200 if self.count else None, "projection_warning": "Observed-prefix arithmetic only; not a validated full-Q1 ETA. Per-window slowdown must be considered.", "windows": self.windows, "checkpoints": self.rows, "samples": self.samples, "partial_outputs_interpreted": False}
 
 
 def preflight():
@@ -193,6 +193,9 @@ def benchmark_child():
     observed.window()
     result = observed.result(status)
     result.update(started_at=started_at, ended_at=datetime.now(UTC).isoformat(), loading_validation_seconds=loading, hard_cap_seconds=1800, clean_stop_requested_at_seconds=1750, stopped_cleanly=True, identity_after=identity(), environment={"python": sys.version, "platform": platform.platform(), "parallelism": False})
+    start_serialization = time.perf_counter()
+    dump("performance_p3.json", result)
+    result["initial_report_serialization_seconds"] = time.perf_counter() - start_serialization
     dump("performance_p3.json", result)
 
 
@@ -260,6 +263,42 @@ def prefix():
     dump("prefix_invariance.json", {"status": "PASS" if rows and all(row["equal"] for row in rows) else "NOT_VERIFIED", "evaluations": observed.count, "comparisons": rows, "scope": "January-only runner versus full-Q1 runner; same exact prefix and internal state hash"})
 
 
+def variant_evidence():
+    """Instrument the existing differential tests; do not invent fixture coverage."""
+    from unittest.mock import patch
+    from tests.integration.test_p3_incremental_equivalence import test_configuration_variants_on_deterministic_noisy_prefixes
+    observed = {}
+    hashes = []
+    original = IncrementalDeterministicStrategyEngine.evaluate
+    def visit(value):
+        if isinstance(value, dict):
+            for key, item in value.items():
+                if key in {"type", "event_type", "resolution", "status", "setup_status", "lifecycle_state", "state"} and isinstance(item, str):
+                    observed.setdefault(key, set()).add(item)
+                visit(item)
+        elif isinstance(value, list):
+            for item in value:
+                visit(item)
+    def record(engine, ctx):
+        output = original(engine, ctx)
+        visit(plain(output))
+        hashes.append({"variant": variant, "cutoff": ctx.as_of.isoformat(), "evaluation_hash": digest(output)})
+        return output
+    with patch.object(IncrementalDeterministicStrategyEngine, "evaluate", record):
+        for variant in range(8):
+            # This test compares complete reference/P3 output at EACH prefix.
+            test_configuration_variants_on_deterministic_noisy_prefixes(variant)
+    assert "IFVG" in observed.get("type", set())
+    assert "CONFIRMED" in observed.get("resolution", set())
+    assert "PENDING" in observed.get("resolution", set())
+    evidence = {"status": "PASS", "evaluations": len(hashes), "observed_states": {key: sorted(items) for key, items in observed.items()}, "comparisons": hashes, "authority": "existing pytest differential test performs full equality assertions; observer only records outputs"}
+    dump("variant_transition_evidence.json", evidence)
+    golden = load("transition_fixture_differential.json")
+    golden["variant_transition_evidence"] = "variant_transition_evidence.json"
+    golden["observed_variant_states"] = evidence["observed_states"]
+    dump("transition_fixture_differential.json", golden)
+
+
 def checkpoints():
     rows = []
     for reached in load("performance_p3.json")["checkpoints"]:
@@ -285,6 +324,13 @@ def checkpoints():
 
 
 def finalize():
+    assert load("r1_differential.json")["status"] == "PASS"
+    assert load("transition_fixture_differential.json")["status"] == "PASS"
+    assert load("variant_transition_evidence.json")["status"] == "PASS"
+    assert load("prefix_invariance.json")["status"] == "PASS"
+    for name in ("fixed_checkpoint_comparisons.json", "random_checkpoint_comparisons.json"):
+        assert all(row.get("equal") is True for row in load(name)["comparisons"])
+    assert all(row.get("rebuild_equal") is True for row in load("rebuild_equivalence.json")["comparisons"])
     dump("protected_after.json", protected())
     assert load("protected_after.json") == load("protected_before.json")
     assert identity() == load("p3_identity.json")
@@ -301,8 +347,8 @@ def finalize():
         writer = csv.DictWriter(stream, fieldnames=list(comparisons[0]))
         writer.writeheader()
         writer.writerows(comparisons)
-    dump("artifact_manifest.json", {"status": "ENGINEERING_EVIDENCE_NOT_RESEARCH", "protected_artifacts_unchanged": True, "identity": identity(), "files": {p.name: sha256(p.read_bytes()).hexdigest() for p in OUT.iterdir() if p.is_file() and p.name != "artifact_manifest.json"}})
+    dump("artifact_manifest.json", {"status": "ENGINEERING_EVIDENCE_NOT_RESEARCH", "reviewed_classification": "PERFORMANCE_STILL_INSUFFICIENT", "classification_basis": "P3_REPORT.md: measured later-window slowdown and retained full-history work; not an automatic cap-based READY classification", "protected_artifacts_unchanged": True, "identity": identity(), "files": {p.name: sha256(p.read_bytes()).hexdigest() for p in OUT.iterdir() if p.is_file() and p.name != "artifact_manifest.json"}})
 
 
 if __name__ == "__main__":
-    {"preflight": preflight, "r1": r1, "benchmark": benchmark, "checkpoints": checkpoints, "transitions": transitions, "prefix": prefix, "finalize": finalize}[sys.argv[1]]()
+    {"preflight": preflight, "r1": r1, "benchmark": benchmark, "checkpoints": checkpoints, "transitions": transitions, "variants": variant_evidence, "prefix": prefix, "finalize": finalize}[sys.argv[1]]()

@@ -4,6 +4,8 @@ Baseline verification: 2026-09-06 (Asia/Taipei)
 
 GitHub publication preflight: 2026-09-07 (Asia/Taipei)
 
+P3 incremental replay verification: 2026-09-07 (Asia/Taipei)
+
 ## Result
 
 The frozen V4.2 engineering baseline completed its scoped regression and
@@ -69,6 +71,31 @@ The first GitHub Actions run completed successfully on the publication commit:
 | Frontend function coverage | 89.13% |
 | Chromium browser cases | 74 passed |
 | Frontend production build | passed |
+
+## P3 incremental replay verification
+
+The P3 assessment preserves the frozen strategy/configuration semantics and
+compares complete typed outputs, rather than accepting matching final trade
+directions alone.
+
+| P3 gate | Result |
+| --- | ---: |
+| R1 reference/P3 cutoff comparisons | 1,440 equal |
+| Transition-fixture prefix comparisons | 40 equal |
+| Instrumented configuration-variant comparisons | 520 equal |
+| Fresh targeted differential/lifecycle pytest | 26 passed |
+| Q1 measurement reached | 7,591 / 129,600 evaluations |
+| Measurement stop | clean at predeclared 1,750-second soft cap |
+| Observed aggregate throughput change | 1.493 to 4.338 evaluations/second (about 2.9x) |
+| Protected authored/prior artifact hashes | 423 unchanged |
+| Reviewed classification | `PERFORMANCE_STILL_INSUFFICIENT` |
+
+The throughput ratio compares runs that stopped at different prefixes and is
+not a validated full-Q1 ETA. Later-window cost continued to grow, so P3 remains
+an experimental, non-default path. No partial trading output, profitability,
+or production-readiness claim was derived from the measurement. Detailed
+method, results, and limits are recorded in the
+[P3 engineering report](experiments/r1e_p3_incremental/P3_REPORT.md).
 
 ## Reproduce
 

@@ -11,11 +11,12 @@
 | 後端與資料 | FastAPI、Pydantic、SQLAlchemy、Alembic、PostgreSQL 16；明確交易邊界與錯誤契約 |
 | 演算法工程 | 封閉 K 線、時間截止點、多週期對齊、Market Structure、SMC/ICT、Risk Engine |
 | 可重現性 | 資料集、策略、設定、程式來源與回測執行皆有 canonical identity；分析與回測共用決定性引擎 |
+| 效能工程 | P3 增量重播以完整輸出差異測試守住語意等價；已量測約 2.9 倍整體吞吐改善，並明確保留後段效能不足的停止結論 |
 | 資料庫安全 | PostgreSQL CHECK 與 trigger 阻擋無效狀態、直接 SQL 改寫與歷史證據變更 |
 | AI 安全邊界 | OpenAI 僅能驗證既有候選，不能創造方向或改寫 Entry／TP／SL；停用時仍可完整運作 |
 | 前端品質 | Next.js／TypeScript 儀表板、請求競態防護、明確錯誤狀態、單元與真實瀏覽器測試 |
 
-最新進度與下一階段請見 [PROJECT_STATUS.md](PROJECT_STATUS.md)；公開版驗證摘要見 [VERIFICATION.md](VERIFICATION.md)；安全邊界請見 [SECURITY.md](SECURITY.md)。V4.2 工程驗證記錄為 867 個後端測試、109 個獨立 PostgreSQL 測試、69 個前端測試與 74 個真實 Chrome 案例通過。這些數字證明的是工程規則與回歸防護，不代表策略獲利、真實成交品質或正式上線可用性。
+最新進度與下一階段請見 [PROJECT_STATUS.md](PROJECT_STATUS.md)；公開版驗證摘要見 [VERIFICATION.md](VERIFICATION.md)；安全邊界請見 [SECURITY.md](SECURITY.md)。最新 P3 工程驗證記錄為 899 個後端測試（含 109 個真實 PostgreSQL 測試）、69 個前端測試與 74 個真實 Chrome 案例通過；增量重播的等價性、效能與限制見 [P3 報告](experiments/r1e_p3_incremental/P3_REPORT.md)。這些數字證明的是工程規則與回歸防護，不代表策略獲利、真實成交品質或正式上線可用性。
 
 ## 產品範圍
 
