@@ -1,6 +1,6 @@
 # Engineering verification summary
 
-Updated: 2026-10-13 (Asia/Taipei)
+Updated: 2026-10-14 (Asia/Taipei)
 
 ## Interpretation
 
@@ -31,7 +31,7 @@ Detailed evidence and counting rules:
 - [PRODUCT_FOUNDATION_F4_1_REPORT.md](PRODUCT_FOUNDATION_F4_1_REPORT.md)
 - [RUST_CORE_BOOTSTRAP_V1_REPORT.md](RUST_CORE_BOOTSTRAP_V1_REPORT.md)
 
-## 2026-10-13 publication preflight
+## 2026-10-14 publication preflight
 
 Fresh checks against the staged publication candidate passed:
 
@@ -44,6 +44,15 @@ Fresh checks against the staged publication candidate passed:
 | TypeScript / ESLint / production build | passed / passed / passed |
 | Candidate secret scan | no high-confidence credential prefix, private-key block, credentialed database URI, or public-browser secret variable found |
 | Staged diff check | passed |
+
+Dependency review upgraded Next.js and `eslint-config-next` from 16.3.3 to
+16.4.0 and applied the available non-breaking transitive fixes. The resulting
+`npm audit` still reports 9 development-tool findings: 2 critical and 2
+moderate in the Vitest/tinypool chain, plus 5 high findings in the Next ESLint
+plugin globbing chain. The available automated remedies require breaking
+Vitest 5 or an incompatible ESLint-config downgrade, so they are deliberately
+not hidden or force-applied in this product milestone. They require a dedicated
+dependency-upgrade review and fresh full gates.
 
 The focused backend run is not substituted for the complete PostgreSQL suite.
 Rust was not available on this Windows host. The protected pull request must

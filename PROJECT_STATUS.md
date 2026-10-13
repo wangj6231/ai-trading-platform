@@ -1,6 +1,6 @@
 # Project status
 
-Last updated: 2026-10-13 (Asia/Taipei)
+Last updated: 2026-10-14 (Asia/Taipei)
 
 ## Current milestone
 
@@ -55,7 +55,7 @@ simultaneous run.
 | Frontend and Paper end-to-end | 258 Vitest tests and 129 production-browser cases passed; TypeScript, ESLint, and Next production build passed |
 | Rust UTC-alignment seam | 8 Rust unit tests plus fmt/clippy passed; Windows wheel runtime smoke passed; the containing backend checkpoint reported 1,968 tests and 92.07% coverage |
 
-The 2026-10-13 publication preflight additionally passed backend static checks,
+The 2026-10-14 publication preflight additionally passed backend static checks,
 299 focused backend security/product tests, 268 frontend coverage tests, 127
 browser cases, and the production build. Complete current PostgreSQL and Rust
 verification remains delegated to the protected pull request checks rather than
@@ -83,6 +83,9 @@ stop conditions live in the phase reports, especially
   evidence. They are not presented as LIVE execution.
 - The protected `main` branch requires pull requests and both repository quality
   checks before merge.
+- Next.js is updated to the non-major security release 16.4.0. Remaining npm
+  audit findings are confined to development/test tooling and require breaking
+  dependency changes; they stay explicitly open for a dedicated upgrade PR.
 
 ## Open boundaries and next stages
 

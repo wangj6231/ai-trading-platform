@@ -1,6 +1,6 @@
 # Portfolio evidence
 
-Updated: 2026-10-13 (Asia/Taipei)
+Updated: 2026-10-14 (Asia/Taipei)
 
 This page is a concise, public-safe map from resume claims to implementation
 and verification evidence. All trading records shown in screenshots are
