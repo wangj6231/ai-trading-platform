@@ -153,6 +153,27 @@ class DeterministicStrategyPipelineConfig(BaseModel):
     def tick_size(self) -> Decimal:
         return self.entry_setup.tick_size
 
+    @property
+    def minimum_history_by_timeframe(self) -> dict[Timeframe, int]:
+        """One shared warmup derivation for direct/live/replay paths.
+
+        These are readiness minima, not rolling indicator lookback windows.
+        Engines still calculate from their complete supplied canonical prefix.
+        """
+        result = {
+            tf: max(self.multi_timeframe.mtf_warmup_bars.get(tf, 1),
+                    structure.swing_left_bars + structure.swing_right_bars + 1)
+            for tf, structure in self.market_structure.items()
+        }
+        result[self.signal_timeframe] = max(
+            result[self.signal_timeframe],
+            self.macd.slow_period + self.macd.signal_period - 1,
+            self.atr.period,
+            self.displacement.displacement_atr_period,
+            self.entry_setup.signal_setup_max_total_bars,
+        )
+        return result
+
 
 class StrategyConfig(BaseModel):
     """Single immutable configuration manifest for deterministic strategy logic."""

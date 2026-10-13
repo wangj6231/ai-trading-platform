@@ -1,5 +1,7 @@
 // TEST ONLY. No fake market data or projection adapter enters the Next.js app.
 export const CandlestickSeries = Symbol("CandlestickSeries");
+export const LineSeries = Symbol("LineSeries");
+export const HistogramSeries = Symbol("HistogramSeries");
 export const ColorType = { Solid: "Solid" };
 export const projection = new Map<number, number>();
 const listeners = new Set<() => void>();

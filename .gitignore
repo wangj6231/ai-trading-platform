@@ -19,6 +19,12 @@ htmlcov/
 .ruff_cache/
 .venv/
 
+# Native build products (Cargo.lock IS authored/reviewed).
+.cache/
+rust/**/target/
+*.pyd
+*.whl
+
 # Node / Next.js
 node_modules/
 .next/
@@ -54,3 +60,30 @@ experiments/**
 !experiments/**/
 !experiments/**/*.py
 !experiments/**/*.md
+
+# Public documentation keeps curated reports and a small explicit screenshot
+# set. Raw command logs, hash inventories, recorded market payloads, proof JSON,
+# duplicated source snapshots, and exploratory P5-P7 work remain local.
+docs/**/*.txt
+docs/**/*.json
+docs/**/baseline/
+docs/**/*.png
+!docs/frontend-product-v1/async-live-btcusdt-completed.png
+!docs/frontend-product-v1/async-live-ethusdt-mobile-completed.png
+!docs/frontend-chart-evidence-v3/dashboard-v3-desktop-fixture.png
+!docs/frontend-chart-evidence-v3/dashboard-v3-mobile-fixture.png
+!docs/frontend-chart-evidence-v3/dense-marker-cluster.png
+!docs/frontend-paper-product-v1/paper-trading-1440-dev-fixture.png
+!docs/frontend-paper-product-v1/positions-390-dev-fixture.png
+!docs/frontend-paper-product-v1/orders-1440-dev-fixture.png
+!docs/frontend-paper-product-v1/journal-1440-dev-fixture.png
+!docs/frontend-paper-product-v1/trade-detail-1440-dev-fixture.png
+!docs/frontend-paper-product-v1/analytics-1440-dev-fixture.png
+!docs/frontend-paper-http-v1/http-trade-1440.png
+!docs/frontend-paper-http-v1/http-analytics-390.png
+!docs/paper-e2e-v1/desktop-closed-journal.png
+!docs/paper-e2e-v1/mobile-closed-journal.png
+experiments/r1e_p5_hot_state/
+experiments/r1e_p6_ict_delta/
+experiments/r1e_p7_profile/
+experiments/r1e_p7b_displacement_links/

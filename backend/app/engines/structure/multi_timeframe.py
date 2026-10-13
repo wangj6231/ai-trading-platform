@@ -1,11 +1,12 @@
 from collections.abc import Mapping, Sequence
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal
 
 from app.core.time import normalize_utc_datetime
-from app.market_data.timeframes import timeframe_duration
+from app.market_data.timeframes import timeframe_bucket_start, timeframe_duration
 from app.schemas.candle import Candle
 from app.schemas.multi_timeframe import (
+    LEGACY_MTF_ROLES,
     MTFAlignmentStatus,
     MTFAnalysisResult,
     MTFConfig,
@@ -32,13 +33,7 @@ class MultiTimeframeInputError(ValueError):
     pass
 
 
-INITIAL_HIERARCHY: dict[Timeframe, MTFRole] = {
-    Timeframe.ONE_HOUR: MTFRole.MARKET_BIAS,
-    Timeframe.FIFTEEN_MINUTES: MTFRole.MARKET_STRUCTURE,
-    Timeframe.FIVE_MINUTES: MTFRole.SETUP,
-    Timeframe.THREE_MINUTES: MTFRole.TRIGGER,
-    Timeframe.ONE_MINUTE: MTFRole.TRIGGER,
-}
+INITIAL_HIERARCHY = LEGACY_MTF_ROLES  # historical compatibility, not active policy
 
 
 def _normalize_decision_time(value: datetime) -> datetime:
@@ -78,12 +73,6 @@ def _validate_source(
         raise MultiTimeframeInputError("decision_time must be timezone-aware")
 
 
-def _bucket_start(timestamp: datetime, duration: timedelta) -> datetime:
-    seconds = int(duration.total_seconds())
-    epoch_seconds = int(timestamp.timestamp())
-    return datetime.fromtimestamp((epoch_seconds // seconds) * seconds, tz=UTC)
-
-
 def resample_closed_candles(
     candles: Sequence[Candle],
     decision_time: datetime,
@@ -94,13 +83,15 @@ def resample_closed_candles(
     """Aggregate only buckets whose end is at or before the point-in-time watermark."""
 
     resolved_time = _normalize_decision_time(decision_time)
-    _validate_source(candles, config, resolved_time)
     source_duration = timeframe_duration(config.mtf_source_timeframe)
     eligible_source = [
         candle
         for candle in candles
         if candle.timestamp + source_duration <= resolved_time
     ]
+    # Validate only the visible prefix.  Rows after the decision cutoff are
+    # outside the MTF knowledge boundary and must not affect this snapshot.
+    _validate_source(eligible_source, config, resolved_time)
     bars: dict[str, list[MTFDerivedBar]] = {
         timeframe.value: [] for timeframe in config.mtf_target_timeframes
     }
@@ -115,18 +106,24 @@ def resample_closed_candles(
     for target in config.mtf_target_timeframes:
         target_duration = timeframe_duration(target)
         grouped: dict[datetime, list[Candle]] = {}
+        bucket_start: datetime | None = None
+        bucket_end: datetime | None = None
         for candle in eligible_source:
-            start = _bucket_start(candle.timestamp, target_duration)
-            grouped.setdefault(start, []).append(candle)
+            # _validate_source established strict ascending order. Reuse only
+            # this bucket's boundary; gaps still call the original UTC rule.
+            if bucket_end is None or candle.timestamp >= bucket_end:
+                bucket_start = timeframe_bucket_start(candle.timestamp, target)
+                bucket_end = bucket_start + target_duration
+            assert bucket_start is not None
+            grouped.setdefault(bucket_start, []).append(candle)
 
-        for start in sorted(grouped):
+        expected_count = int(target_duration / source_duration)
+        for start, constituents in grouped.items():
             end = start + target_duration
             if end > resolved_time:
                 continue
-            constituents = sorted(grouped[start], key=lambda candle: candle.timestamp)
             observed = tuple(candle.timestamp for candle in constituents)
             if config.mtf_gap_policy is MTFGapPolicy.REQUIRE_CONTIGUOUS:
-                expected_count = int(target_duration / source_duration)
                 expected = tuple(
                     start + index * source_duration for index in range(expected_count)
                 )
@@ -182,6 +179,8 @@ def _snapshot_for_timeframe(
     decision_time: datetime,
     max_age: int,
     issues: Sequence[MTFDataQualityIssue],
+    role: MTFRole,
+    minimum_history: int,
 ) -> MTFTimeframeSnapshot:
     index_by_timestamp = {bar.timestamp: index for index, bar in enumerate(bars)}
     eligible = [
@@ -198,12 +197,14 @@ def _snapshot_for_timeframe(
     issue_codes: list[MTFReasonCode] = []
     if any(issue.timeframe is timeframe for issue in issues):
         issue_codes.append(MTFReasonCode.MTF_INCOMPLETE_BUCKET)
+    if len(bars) < minimum_history:
+        issue_codes.append(MTFReasonCode.MTF_WARMUP_INCOMPLETE)
 
-    if not eligible:
+    if not eligible or len(bars) < minimum_history:
         issue_codes.append(MTFReasonCode.MTF_STATE_UNAVAILABLE)
         return MTFTimeframeSnapshot(
             timeframe=timeframe,
-            role=INITIAL_HIERARCHY[timeframe],
+            role=role,
             state=TrendState.INSUFFICIENT_DATA,
             available=False,
             stale=False,
@@ -229,7 +230,7 @@ def _snapshot_for_timeframe(
         issue_codes.append(MTFReasonCode.MTF_STATE_UNAVAILABLE)
     return MTFTimeframeSnapshot(
         timeframe=timeframe,
-        role=INITIAL_HIERARCHY[timeframe],
+        role=role,
         state=state,
         available=available,
         stale=stale,
@@ -308,6 +309,7 @@ def analyze_multi_timeframe(
     entry_zone: EntryZone | None = None,
     swings_by_timeframe: Mapping[Timeframe, Sequence[ConfirmedSwing]] | None = None,
     session_expected_opens: Mapping[Timeframe, Sequence[datetime]] | None = None,
+    minimum_history_by_timeframe: Mapping[Timeframe, int] | None = None,
 ) -> MTFAnalysisResult:
     """Evaluate hierarchy and veto rules from data available at decision_time only."""
 
@@ -327,6 +329,9 @@ def analyze_multi_timeframe(
             resolved_time,
             config.mtf_state_max_age_bars[timeframe],
             resampled.issues,
+            config.mtf_role_by_timeframe[timeframe],
+            max(config.mtf_warmup_bars.get(timeframe, 1),
+                (minimum_history_by_timeframe or {}).get(timeframe, 1)),
         )
 
     required = [snapshots[timeframe.value] for timeframe in config.mtf_required_timeframes]
@@ -433,6 +438,19 @@ def analyze_multi_timeframe(
             alignment = MTFAlignmentStatus.PARTIALLY_ALIGNED
         reasons.append(MTFReasonCode.MTF_INCOMPLETE_BUCKET)
 
+    # Availability is independent of the directional quorum. Never let two
+    # aligned members compensate for an unavailable mandatory third member.
+    unavailable = [snapshots[tf.value] for tf in config.mtf_availability_required
+                   if not snapshots[tf.value].available or snapshots[tf.value].reason_codes]
+    if unavailable:
+        trade_allowed = False
+        eligibility = MTFEligibility.NO_TRADE
+        if alignment is MTFAlignmentStatus.ALIGNED:
+            alignment = MTFAlignmentStatus.PARTIALLY_ALIGNED
+        reasons.append(MTFReasonCode.MTF_STATE_UNAVAILABLE)
+        for item in unavailable:
+            reasons.extend(item.reason_codes)
+
     dealing_range = None
     if config.mtf_require_price_array_gate:
         if entry_zone is None:
@@ -476,7 +494,7 @@ def analyze_multi_timeframe(
     # Preserve the hierarchy object in role order regardless of config tuple order.
     ordered_snapshots: dict[str, MTFTimeframeSnapshot] = {
         timeframe.value: snapshots[timeframe.value]
-        for timeframe in INITIAL_HIERARCHY
+        for timeframe in config.mtf_role_by_timeframe
         if timeframe.value in snapshots
     }
     return MTFAnalysisResult(

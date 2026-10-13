@@ -3,6 +3,7 @@ from collections.abc import Callable, Sequence
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal
+from pathlib import Path
 
 import httpx
 import pytest
@@ -28,6 +29,7 @@ from app.services.strategy_evaluation import (
 
 
 START = datetime(2025, 1, 1, tzinfo=UTC)
+LEGACY_CONFIG_PATH = Path(__file__).parents[1] / "fixtures/legacy_1m_strategy.yaml"
 BULLISH_PRICES = (
     (100, 110, 90, 100),
     (100, 108, 94, 105),
@@ -140,9 +142,9 @@ def server_owned_strategy(
     provider = StaticProvider(candles, error=provider_error)
     market_data = MarketDataService([provider], now=lambda: retrieved_at)
     if config_transform is None:
-        service = build_strategy_evaluation_service(settings, market_data)
+        service = build_strategy_evaluation_service(settings, market_data, load_strategy_config(LEGACY_CONFIG_PATH))
     else:
-        base = load_strategy_config(settings.strategy_config_path)
+        base = load_strategy_config(LEGACY_CONFIG_PATH)
         configs = {
             symbol: config_transform(config)
             for symbol, config in base.pipelines.items()
@@ -243,7 +245,7 @@ def test_valid_binance_wire_payload_preserves_strategy_decision_parity(
         now=lambda: retrieved_at,
     )
     market_data = MarketDataService([provider], now=lambda: retrieved_at)
-    service = build_strategy_evaluation_service(test_settings, market_data)
+    service = build_strategy_evaluation_service(test_settings, market_data, load_strategy_config(LEGACY_CONFIG_PATH))
     client.app.dependency_overrides[get_strategy_evaluation_service] = lambda: service
     try:
         binance_response = client.post(
@@ -557,7 +559,7 @@ def test_research_cutoff_rejects_naive_api_datetime(client: TestClient) -> None:
     assert response.json()["error"]["details"][0]["location"] == "body.cutoff"
 
 
-def test_unconfigured_signal_timeframe_fails_closed(
+def test_display_timeframe_does_not_select_another_strategy(
     client: TestClient,
     test_settings: Settings,
 ) -> None:
@@ -573,8 +575,9 @@ def test_unconfigured_signal_timeframe_fails_closed(
             json={"symbol": "BTCUSDT", "timeframe": "5m"},
         )
 
-    assert response.status_code == 503
-    assert response.json()["error"]["code"] == "STRATEGY_PIPELINE_UNAVAILABLE"
+    assert response.status_code == 200
+    assert response.json()["timeframe"] == "1m"  # server-owned legacy fixture
+    assert response.json()["decision"] == "LONG"
 
 
 @pytest.mark.parametrize(

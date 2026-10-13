@@ -28,6 +28,7 @@ from app.engines.structure import (
 )
 from app.market_data.timeframes import timeframe_duration
 from app.schemas.candle import Candle
+from app.schemas.displacement import DisplacementAnalysisResult
 from app.schemas.entry_setup import (
     CompositeEntrySetup,
     EntrySetupDirection,
@@ -93,6 +94,19 @@ class ConcreteDeterministicStrategyEngine:
     def strategy_config(self) -> StrategyConfig:
         return self._strategy_config
 
+    def _project_displacement_links(
+        self, displacement: DisplacementAnalysisResult,
+    ) -> tuple[OrderBlockDisplacementLink, ...]:
+        """Reference projection; owned incremental states may reuse validated links."""
+        return tuple(
+            OrderBlockDisplacementLink(
+                displacement_id=leg.leg_id,
+                structure_event=leg.associated_structure_break,
+                confirmed_at=leg.confirmed_at,
+            )
+            for leg in displacement.legs
+        )
+
     def evaluate(self, context: StrategyEvaluationContext) -> StrategyEvaluationResult:
         config = self._configs.get(context.symbol)
         if config is None:
@@ -145,6 +159,15 @@ class ConcreteDeterministicStrategyEngine:
                 config,
                 symbol=context.symbol,
             )
+            minimum_history = config.minimum_history_by_timeframe
+            if any(
+                len(candles_by_target[tf]) < minimum_history[tf]
+                for tf in config.multi_timeframe.mtf_availability_required
+            ):
+                return self._no_trade(
+                    context, timeframe=signal_timeframe,
+                    reason="REQUIRED_TIMEFRAME_WARMUP_INCOMPLETE",
+                )
             for timeframe, candles in candles_by_target.items():
                 structures[timeframe.value] = self._analyze_market_structure(
                     candles,
@@ -188,14 +211,7 @@ class ConcreteDeterministicStrategyEngine:
                 config.displacement,
                 fvg_zones=fvg.zones,
             )
-            displacement_links = tuple(
-                OrderBlockDisplacementLink(
-                    displacement_id=leg.leg_id,
-                    structure_event=leg.associated_structure_break,
-                    confirmed_at=leg.confirmed_at,
-                )
-                for leg in displacement.legs
-            )
+            displacement_links = self._project_displacement_links(displacement)
             order_blocks = self._analyze_order_blocks(
                 signal_candles,
                 signal_timeframe,
@@ -263,6 +279,9 @@ class ConcreteDeterministicStrategyEngine:
                 _mtf_direction(setup.direction),
                 state_events,
                 config.multi_timeframe,
+                minimum_history_by_timeframe=(
+                    minimum_history if config.multi_timeframe.mtf_warmup_bars else None
+                ),
                 entry_zone=setup.entry_zone,
                 swings_by_timeframe={
                     timeframe: structures[timeframe.value].confirmed_swings

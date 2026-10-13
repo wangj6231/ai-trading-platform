@@ -54,3 +54,23 @@ class SessionCalendarCoverageError(MarketDataError):
 
 class SessionCalendarMismatchError(MarketDataError):
     pass
+
+
+class HistoricalBootstrapError(MarketDataError):
+    """Base class for server-owned historical range/bootstrap failures."""
+
+
+class HistoricalRangeUnsupportedError(HistoricalBootstrapError):
+    pass
+
+
+class HistoricalPaginationError(HistoricalBootstrapError):
+    pass
+
+
+class HistoricalOverlapConflictError(HistoricalBootstrapError):
+    pass
+
+
+class HistoricalCacheCorruptionError(HistoricalBootstrapError):
+    pass

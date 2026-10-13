@@ -1,0 +1,32 @@
+# FRONTEND PAPER — Backend requirements
+
+2026-10-08. The attached frontend handoff governs this slice. Backend Paper implementation remains unimplemented; `PAPER_ACCOUNT_V1_REPORT.md` records unresolved financial policy. The working UI uses centralized, clearly labeled DEV / FIXTURE snapshots. The values do **not** approve currency/capital, fee, cost-basis, R, valuation or fill policies.
+
+Endpoint names below describe capabilities to agree on, **not existing or newly implemented endpoints**. Existing strategy/evaluation/market APIs remain unchanged.
+
+| Feature | Frontend needs | Required backend field / endpoint capability | Why required | Proceed with fixture? | Blocking / non-blocking |
+|---|---|---|---|---|---|
+| Account context | Account identity, environment, execution provider, profile, status, capabilities | Account read capability: `accountId`, `environment`, `executionProvider`, `accountingProfile`, position model, capabilities | Keep market data separate from execution; isolate accounts | Yes | Non-blocking for visual V1; required for backend integration |
+| Account economics | Balance, equity, realized/unrealized PnL, currency, valuation timestamp | Authoritative account summary; decimal values and explicit unavailable fields | Browser must not calculate balances or imply missing amounts are zero | Yes | Same |
+| Order submission | User intent, acknowledgment, separate technical error | Intent write capability, request/idempotency identity, quantity/type/side, optional LIMIT condition, optional strategy attribution | Submit once; no browser confirmed fill price | Yes, bounded deterministic script | Same; public write/auth boundary belongs to backend |
+| Order lifecycle | SUBMITTING/PENDING, ACKNOWLEDGED, PARTIALLY_FILLED, FILLED, CANCELLED, REJECTED, UNKNOWN | Order read/status capability: order/account identity, quantities, average fill, provider/environment, timestamps, reason | ACK != fill; UNKNOWN != rejection; technical failure != strategy result | Yes | Same |
+| Cancellation / reconciliation | Confirmed cancel, immutable previous fills, UNKNOWN reconciliation | Cancel and reconciliation semantics; command identity and terminal-state policy | Never erase confirmed fills or treat disconnect as rejection | Yes, fixture cancellation only | Same |
+| Position lifecycle | OPEN/PARTIALLY_CLOSED/CLOSED; total/remaining qty; average entry; valuation; realized/unrealized PnL | Position read capability; position/trade/account IDs, currency, valuation time, allowed actions/capabilities | Supports scale-in and partial-close without frontend accounting | Yes | Same |
+| Scale / partial / full close | Authoritative action intent and resulting order/fill projection | Position action capabilities or canonical intent API; supplied resulting quantities and financial stats | Component must not simulate fills or calculate outcome | Yes, pre-authored alternate close snapshots | Same |
+| Canonical Trade + fills | Trade economics/lifecycle, complete immutable `TradeFill[]` | Trade read capability; unique fill/order/account IDs, time, BUY/SELL, decimal price/qty, fee/currency | Multiple fills must remain inspectable; order != fill != trade | Yes | Same |
+| Auto Journal | Account-scoped trade list and review references | Canonical execution-generated Journal/trade read capability, pagination and filter semantics | Opening a strategy ticket never creates a Journal record | Yes | Same |
+| Review metadata | Notes/tags/setup only, save/error/conflict semantics | Metadata-only mutation; immutable economic fields rejected; version/concurrency token | Review edits must not modify execution truth | Yes, session-only whitelist | Same |
+| Strategy attribution | Name/version, decision/cutoff/15m clock, config identity, evaluation reference, planned levels | Persist original attribution on intent/trade; existing signal lacks a guaranteed display name, so current UI shows unavailable | Plan direction/entry differs from actual execution; never fabricate identity | Yes; formal Dashboard passes proven fields only | Same |
+| Entry / exit snapshots | Attachment references, PENDING/READY/FAILED, URL, time/provenance and failure detail | Asynchronous attachment read/status capability linked to trade and cutoff | Snapshot failure cannot invalidate a trade; no base64 in Trade | Yes, explicitly illustrative static asset | Same |
+| User upload | Asset reference/URL, accepted type/size, upload/error/delete retention contract | Authenticated attachment upload capability and access policy | Current local blob reference is session-only, not server persistence | Yes | Same |
+| Analytics | CLOSED executed trades only; all supplied core/additional metrics and breakdowns | Account-scoped authoritative statistics capability, scope/as-of, included-trade references, null metric policy, currency | Exclude open/unfilled/cancelled-no-fill/signals; frontend renders supplied metrics | Yes, pre-authored metrics | Same |
+| HTTP adapter lifecycle | Independent loading/error/unavailable, cancellation, refresh, stable identity | Versioned DTO/schema, error taxonomy, resource reads, pagination and refresh contracts | Replace runtime/adapter while retaining canonical UI; no polling that re-executes evaluation | Yes | Same |
+| Financial policy | Approved quantity, cost basis, fees/FX, rounding, initial risk/R, valuation, capital, event ordering | Owner decisions documented in `PAPER_DIRECTIONAL_V1_POLICY.md` before backend implementation | Different choices change financial truth | Visual workflow yes; production execution no | Non-blocking visual V1; blocks real Paper financial authority |
+
+## Adapter seam
+
+`frontend/src/lib/product/contracts.ts` defines canonical Zod-normalized view models and `AccountApi`, `ExecutionApi`, `JournalApi`, `AnalyticsApi`. `ProductRuntime` owns a subscribable canonical snapshot and the APIs. A future HTTP runtime can implement fetch/cache/refresh at this boundary without provider branches in Positions, Trade Detail, Journal or Analytics.
+
+Financial values remain decimal strings with explicit currency or null availability. They are never transformed into browser accounting formulas. The fixture runtime is selected explicitly by the current product provider; its control panel and every product page identify DEV / FIXTURE.
+
+Backend handoff should settle the contract and policies before implementing the HTTP runtime. No endpoint URL, policy or broker credential behavior was invented in this frontend slice.

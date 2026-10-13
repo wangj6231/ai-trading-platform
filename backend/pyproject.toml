@@ -12,16 +12,19 @@ dependencies = [
     "fastapi>=0.115,<1",
     "httpx>=0.28,<1",
     "openai>=1.99,<3",
+    "pillow>=12.1.1,<13",
     "pydantic>=2.10,<3",
     "pydantic-settings>=2.6,<3",
     "psycopg[binary]>=3.2,<4",
     "PyYAML>=6.0,<7",
     "sqlalchemy>=2.0,<3",
     "uvicorn[standard]>=0.32,<1",
+    "utc-alignment-core==0.1.0",
 ]
 
 [project.optional-dependencies]
 test = [
+    "psutil>=6,<8",
     "mypy>=1.14,<2",
     "pytest>=8.3,<9",
     "pytest-cov>=6,<8",

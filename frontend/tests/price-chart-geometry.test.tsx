@@ -43,6 +43,7 @@ vi.mock("lightweight-charts", () => ({
 }));
 
 import { PriceChart } from "@/components/price-chart";
+import { cleanEvidenceView } from "@/lib/chart-evidence";
 import type {
   AnalysisViewModel,
   Candle,
@@ -58,6 +59,20 @@ const FUTURE_CHART_END_AT = "2025-01-01T00:15:00Z";
 function unixTime(timestamp: string): number {
   return Math.floor(new Date(timestamp).getTime() / 1000);
 }
+
+it("never snaps a 15m confirmation onto an earlier coarse chart candle", () => {
+  const analysis: AnalysisViewModel = {
+    supports: [], resistances: [], structures: [], zones: [], macd: [],
+    swings: [{ id: "fixture-swing", kind: "HIGH", price: 110,
+      pivotAt: START_AT, confirmedAt: "2025-01-01T00:15:00Z" }],
+  };
+  chartHarness.createSeriesMarkers.mockClear();
+  render(<PriceChart view={cleanEvidenceView()} candles={[{ ...candles[0], timestamp: START_AT }]} analysis={analysis} signal={null} />);
+  expect(chartHarness.createSeriesMarkers).toHaveBeenLastCalledWith(
+    chartHarness.chart.addSeries.mock.results.at(-1)?.value,
+    [expect.objectContaining({ time: unixTime(START_AT), text: "" })],
+  );
+});
 
 const candles: Candle[] = [
   {
@@ -136,7 +151,7 @@ function activeFvg(): ZoneOverlay {
 function currentSignal(): SignalViewModel {
   return {
     symbol: "BTCUSDT",
-    timeframe: "5m",
+    strategyEvaluationClock: "15m",
     decisionMode: "DETERMINISTIC_ONLY",
     aiValidationStatus: "NOT_REQUESTED",
     algorithmDecision: "LONG",
@@ -150,6 +165,9 @@ function currentSignal(): SignalViewModel {
     riskReward: 2,
     reason: [],
     factors: {},
+    dataCutoffAt: "2025-01-01T00:00:00Z",
+    algorithmScore: 7,
+    scoreBreakdown: {},
     validatedAt: START_AT,
   };
 }
@@ -216,7 +234,7 @@ function rightEdge(zone: HTMLElement): number {
 describe("PriceChart zone DOM geometry", () => {
   it("ends a short terminal zone at the trusted terminal projection", () => {
     const { container } = render(
-      <PriceChart
+      <PriceChart view={cleanEvidenceView()}
         candles={candles}
         analysis={analysisWith(terminalZone())}
         signal={null}
@@ -238,7 +256,7 @@ describe("PriceChart zone DOM geometry", () => {
     ["ORDER_BLOCK", "EXPIRED"],
   ] as const)("uses the exact endpoint for terminal %s %s", (kind, state) => {
     const { container } = render(
-      <PriceChart
+      <PriceChart view={cleanEvidenceView()}
         candles={candles}
         analysis={analysisWith(terminalZone(state, kind))}
         signal={null}
@@ -252,7 +270,7 @@ describe("PriceChart zone DOM geometry", () => {
     chartHarness.coordinates.set(unixTime(TERMINAL_AT), 160);
 
     const { container } = render(
-      <PriceChart
+      <PriceChart view={cleanEvidenceView()}
         candles={candles}
         analysis={analysisWith(terminalZone())}
         signal={null}
@@ -268,7 +286,7 @@ describe("PriceChart zone DOM geometry", () => {
     chartHarness.coordinates.set(unixTime(CHART_END_AT), 106);
 
     const { container } = render(
-      <PriceChart
+      <PriceChart view={cleanEvidenceView()}
         candles={candles}
         analysis={analysisWith(activeFvg())}
         signal={null}
@@ -285,7 +303,7 @@ describe("PriceChart zone DOM geometry", () => {
     chartHarness.coordinates.set(unixTime(CHART_END_AT), 106);
 
     const { container } = render(
-      <PriceChart candles={candles} analysis={null} signal={currentSignal()} />,
+      <PriceChart view={cleanEvidenceView()} candles={candles} analysis={null} signal={currentSignal()} />,
     );
 
     const entry = renderedZone(container, ".chart-zone.entry");
@@ -295,7 +313,7 @@ describe("PriceChart zone DOM geometry", () => {
 
   it("does not extend a terminal zone when future candles arrive", () => {
     const { container, rerender } = render(
-      <PriceChart
+      <PriceChart view={cleanEvidenceView()}
         candles={candles}
         analysis={analysisWith(terminalZone())}
         signal={null}
@@ -304,7 +322,7 @@ describe("PriceChart zone DOM geometry", () => {
     expect(rightEdge(renderedZone(container, ".chart-zone.terminal"))).toBe(106);
 
     rerender(
-      <PriceChart
+      <PriceChart view={cleanEvidenceView()}
         candles={[...candles, { ...candles[0], timestamp: FUTURE_CHART_END_AT }]}
         analysis={analysisWith(terminalZone())}
         signal={null}
@@ -316,7 +334,7 @@ describe("PriceChart zone DOM geometry", () => {
 
   it("recomputes an exact terminal endpoint after resize", () => {
     const { container } = render(
-      <PriceChart
+      <PriceChart view={cleanEvidenceView()}
         candles={candles}
         analysis={analysisWith(terminalZone())}
         signal={null}
@@ -337,7 +355,7 @@ describe("PriceChart zone DOM geometry", () => {
 
   it("recomputes an exact terminal endpoint after chart panning", () => {
     const { container } = render(
-      <PriceChart
+      <PriceChart view={cleanEvidenceView()}
         candles={candles}
         analysis={analysisWith(terminalZone())}
         signal={null}
@@ -364,7 +382,7 @@ describe("PriceChart zone DOM geometry", () => {
     chartHarness.coordinates.set(unixTime(TERMINAL_AT), endX);
 
     const { container } = render(
-      <PriceChart
+      <PriceChart view={cleanEvidenceView()}
         candles={candles}
         analysis={analysisWith(terminalZone())}
         signal={null}
@@ -381,7 +399,7 @@ describe("PriceChart zone DOM geometry", () => {
     chartHarness.coordinates.set(unixTime(TERMINAL_AT), 106);
 
     const { container } = render(
-      <PriceChart
+      <PriceChart view={cleanEvidenceView()}
         candles={candles}
         analysis={analysisWith(terminalZone())}
         signal={null}
@@ -396,7 +414,7 @@ describe("PriceChart zone DOM geometry", () => {
     chartHarness.coordinates.set(unixTime(TERMINAL_AT), 6);
 
     const { container } = render(
-      <PriceChart
+      <PriceChart view={cleanEvidenceView()}
         candles={candles}
         analysis={analysisWith(terminalZone())}
         signal={null}
@@ -415,7 +433,7 @@ describe("PriceChart zone DOM geometry", () => {
       chartHarness.coordinates.set(unixTime(TERMINAL_AT), coordinate);
 
       const { container } = render(
-        <PriceChart
+        <PriceChart view={cleanEvidenceView()}
           candles={candles}
           analysis={analysisWith(terminalZone())}
           signal={null}

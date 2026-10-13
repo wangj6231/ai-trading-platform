@@ -3,7 +3,7 @@ import { ApiRequestError, fetchLatestSignal, parseSignalPayload } from "@/lib/ap
 
 const validLong = {
   symbol: "BTCUSDT",
-  timeframe: "5m",
+  timeframe: "15m",
   source: "server-provider",
   retrieved_at: "2025-01-01T00:21:00Z",
   data_cutoff_at: "2025-01-01T00:20:00Z",
@@ -11,7 +11,7 @@ const validLong = {
     provider: "server-provider",
     data_mode: "SERVER_PROVIDER",
     symbol: "BTCUSDT",
-    timeframe: "5m",
+    timeframe: "15m",
     first_candle_at: "2024-12-31T18:00:00Z",
     last_candle_at: "2025-01-01T00:15:00Z",
     data_cutoff_at: "2025-01-01T00:20:00Z",
@@ -106,10 +106,10 @@ describe("trading signal runtime safety", () => {
   it("accepts complete session-calendar provenance", () => {
     const sessionPayload = {
       ...validLong,
-      symbol: "XAUUSD",
+      symbol: "BTCUSDT",
       provenance: {
         ...validLong.provenance,
-        symbol: "XAUUSD",
+        symbol: "BTCUSDT",
         market_schedule_mode: "SESSION_CALENDAR",
         session_calendar_id: "fixture-xau",
         session_calendar_version: "2026a",
@@ -117,8 +117,8 @@ describe("trading signal runtime safety", () => {
       },
     };
 
-    expect(parseSignalPayload(sessionPayload, "XAUUSD", "5m").symbol).toBe(
-      "XAUUSD",
+    expect(parseSignalPayload(sessionPayload, "BTCUSDT", "5m").symbol).toBe(
+      "BTCUSDT",
     );
   });
 
@@ -153,14 +153,14 @@ describe("trading signal runtime safety", () => {
     ).toThrow("identity does not match");
   });
 
-  it("rejects response timeframe mismatch instead of replacing it", () => {
+  it("rejects a non-15m strategy response instead of replacing it", () => {
     expect(() =>
       parseSignalPayload({
         ...validLong,
-        timeframe: "15m",
-        provenance: { ...validLong.provenance, timeframe: "15m" },
+        timeframe: "3m",
+        provenance: { ...validLong.provenance, timeframe: "3m" },
       }, "BTCUSDT", "5m"),
-    ).toThrow("identity does not match");
+    ).toThrow("safety validation");
   });
 
   it("rejects provider identity that conflicts with server provenance", () => {
@@ -213,7 +213,7 @@ describe("trading signal runtime safety", () => {
       ),
     );
 
-    const error = await fetchLatestSignal("BTCUSDT", "5m").catch(
+    const error = await fetchLatestSignal("BTCUSDT").catch(
       (reason: unknown) => reason,
     );
 
@@ -237,7 +237,7 @@ describe("trading signal runtime safety", () => {
       ),
     );
 
-    await expect(fetchLatestSignal("BTCUSDT", "5m")).rejects.toThrow(
+    await expect(fetchLatestSignal("BTCUSDT")).rejects.toThrow(
       "Signal response failed safety validation.",
     );
   });

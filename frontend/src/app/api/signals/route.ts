@@ -1,17 +1,18 @@
 import type { NextRequest } from "next/server";
-import { proxyBackend, proxyJsonPost } from "@/lib/backend-proxy";
+import { forwardBackendHeaders } from "@/lib/backend-proxy";
+import { proxyStrategyRequest } from "@/lib/product-request";
 
 export async function GET(request: NextRequest) {
   const symbol = request.nextUrl.searchParams.get("symbol");
-  const timeframe = request.nextUrl.searchParams.get("timeframe");
-  return proxyBackend("/api/v1/signals/evaluate", {
+  // Deprecated chart context is not sent as strategy authority.
+  return proxyStrategyRequest(new Request(request.url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ symbol, timeframe }),
+    headers: forwardBackendHeaders(request.headers, { "Content-Type": "application/json" }),
+    body: JSON.stringify({ symbol }),
     signal: request.signal,
-  });
+  }), "/api/v1/signals/evaluate");
 }
 
 export async function POST(request: NextRequest) {
-  return proxyJsonPost(request, "/api/v1/signals/evaluate");
+  return proxyStrategyRequest(request, "/api/v1/signals/evaluate");
 }

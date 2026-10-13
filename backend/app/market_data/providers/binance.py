@@ -4,8 +4,11 @@ from collections.abc import Awaitable, Callable, Sequence
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any
+from time import perf_counter
 
 import httpx
+from app.core.telemetry import DEFAULT_TELEMETRY, Telemetry
+from app.core.admission import AdmissionBackend, AdmissionContext, CostClass, check_admission
 
 from app.core.time import normalize_utc_datetime, utc_now
 from app.market_data.base import ParsedProviderCandle
@@ -17,7 +20,12 @@ from app.market_data.exceptions import (
     UnsupportedSymbolError,
 )
 from app.market_data.sessions import CONTINUOUS_24_7_SCHEDULE
-from app.market_data.timeframes import timeframe_milliseconds, to_binance_interval
+from app.market_data.timeframes import (
+    timeframe_bucket_start,
+    timeframe_duration,
+    timeframe_milliseconds,
+    to_binance_interval,
+)
 from app.schemas.types import MarketSymbol, Timeframe
 
 
@@ -43,6 +51,8 @@ class BinancePublicMarketDataProvider:
         client: httpx.AsyncClient | None = None,
         now: Callable[[], datetime] | None = None,
         sleep: Callable[[float], Awaitable[None]] | None = None,
+        telemetry: Telemetry | None = None,
+        budget: AdmissionBackend | None = None,
     ) -> None:
         if max_attempts < 1:
             raise ValueError("max_attempts must be at least 1")
@@ -54,6 +64,8 @@ class BinancePublicMarketDataProvider:
         self._max_attempts = max_attempts
         self._retry_backoff_seconds = retry_backoff_seconds
         self._sleep = sleep or asyncio.sleep
+        self.telemetry = telemetry or DEFAULT_TELEMETRY
+        self.budget = budget
 
     async def aclose(self) -> None:
         if self._owns_client:
@@ -92,11 +104,70 @@ class BinancePublicMarketDataProvider:
 
         return self._parse_payload(payload, interval_ms)
 
+    async def get_historical_candles_between(
+        self,
+        symbol: MarketSymbol,
+        timeframe: Timeframe,
+        start: datetime,
+        end: datetime,
+        limit: int,
+    ) -> Sequence[ParsedProviderCandle]:
+        """Fetch one deterministic, closed [start, end) historical page.
+
+        Binance's ``startTime``/``endTime`` are inclusive.  The adapter sends
+        ``end - 1ms`` so callers can compose pages with half-open UTC ranges
+        without duplicating the candle at a page boundary.
+        """
+
+        if symbol not in self.supported_symbols:
+            raise UnsupportedSymbolError(f"{self.name} does not support {symbol.value}")
+        if limit < 1 or limit > self.maximum_limit:
+            raise ProviderRequestError(f"limit must be between 1 and {self.maximum_limit}")
+        try:
+            resolved_start = normalize_utc_datetime(start)
+            resolved_end = normalize_utc_datetime(end)
+            now = normalize_utc_datetime(self._now())
+        except ValueError as exc:
+            raise ProviderRequestError("Historical range timestamps must include a UTC offset") from exc
+        duration = timeframe_duration(timeframe)
+        if resolved_start >= resolved_end:
+            raise ProviderRequestError("Historical range end must be after start")
+        if timeframe_bucket_start(resolved_start, timeframe) != resolved_start:
+            raise ProviderRequestError("Historical range start must align to the requested timeframe")
+        if timeframe_bucket_start(resolved_end - duration, timeframe) + duration != resolved_end:
+            raise ProviderRequestError("Historical range end must align to the requested timeframe")
+        latest_closed_cutoff = timeframe_bucket_start(now, timeframe)
+        if resolved_end > latest_closed_cutoff:
+            raise ProviderRequestError("Historical range cannot include an open or future candle")
+
+        interval_ms = timeframe_milliseconds(timeframe)
+        payload = await self._request_payload(
+            {
+                "symbol": symbol.value,
+                "interval": to_binance_interval(timeframe),
+                "startTime": int(resolved_start.timestamp() * 1000),
+                "endTime": int(resolved_end.timestamp() * 1000) - 1,
+                "limit": limit,
+            }
+        )
+        parsed = self._parse_payload(payload, interval_ms)
+        if any(
+            candle.timestamp < resolved_start or candle.timestamp >= resolved_end
+            for candle in parsed
+        ):
+            raise InvalidProviderPayloadError("Binance range page crossed its requested boundaries")
+        return parsed
+
     async def _request_payload(self, params: dict[str, str | int]) -> Any:
         for attempt in range(1, self._max_attempts + 1):
+            if self.budget is not None:
+                check_admission(self.budget, AdmissionContext('BINANCE_KLINES', CostClass.PROVIDER_TRIGGERING))
+            started = perf_counter()
             try:
                 response = await self._client.get("/api/v3/klines", params=params)
             except httpx.TimeoutException as exc:
+                self.telemetry.emit('provider', symbol=params['symbol'], outcome='timeout',
+                                    http_status=None, duration_seconds=perf_counter() - started)
                 if attempt < self._max_attempts:
                     self._log_retry("timeout", attempt, params)
                     await self._backoff(attempt)
@@ -105,6 +176,8 @@ class BinancePublicMarketDataProvider:
                     "Binance public Kline request timed out"
                 ) from exc
             except httpx.TransportError as exc:
+                self.telemetry.emit('provider', symbol=params['symbol'], outcome='error',
+                                    http_status=None, duration_seconds=perf_counter() - started)
                 if attempt < self._max_attempts:
                     self._log_retry("transport", attempt, params)
                     await self._backoff(attempt)
@@ -113,6 +186,11 @@ class BinancePublicMarketDataProvider:
                     "Binance public Kline transport failed"
                 ) from exc
 
+            self.telemetry.emit('provider', symbol=params['symbol'], http_status=response.status_code,
+                outcome='rate_limit' if response.status_code == 429 else 'error' if response.status_code >= 400 else 'ok',
+                retry_after_seconds=_parse_retry_after_seconds(response.headers.get('Retry-After'),
+                    maximum=self.maximum_retry_after_seconds) if response.status_code == 429 else None,
+                duration_seconds=perf_counter() - started)
             if response.status_code == 429:
                 logger.warning(
                     "Market-data provider rate limit",

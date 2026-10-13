@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 from pydantic import ValidationError
+from app.core.admission import ResourceAdmissionError
 
 from app.core.errors import (
     MarketDataProviderNotConfiguredError,
@@ -12,7 +13,7 @@ from app.core.errors import (
     MarketDataUpstreamTimeoutError,
 )
 from app.core.time import normalize_utc_datetime, utc_now
-from app.market_data.base import MarketDataProvider, ParsedProviderCandle
+from app.market_data.base import HistoricalRangeMarketDataProvider, MarketDataProvider, ParsedProviderCandle
 from app.market_data.exceptions import (
     InvalidProviderPayloadError,
     MarketDataError,
@@ -23,10 +24,11 @@ from app.market_data.exceptions import (
     UnclosedCandleError,
 )
 from app.market_data.normalization import (
+    TimestampedCandle,
     validate_candle_alignment,
     validate_candle_order,
 )
-from app.market_data.timeframes import timeframe_duration, timeframe_milliseconds
+from app.market_data.timeframes import timeframe_bucket_start, timeframe_duration, timeframe_milliseconds
 from app.market_data.sessions import ProviderMarketSchedule
 from app.schemas.candle import Candle
 from app.schemas.market import (
@@ -47,15 +49,45 @@ class MarketDataService:
         providers: Iterable[MarketDataProvider],
         *,
         now: Callable[[], datetime] | None = None,
+        alignment_validator: Callable[[Iterable[TimestampedCandle], Timeframe], None] | None = None,
     ) -> None:
         self._providers = tuple(providers)
         self._now = now or utc_now
+        self._alignment_validator = validate_candle_alignment if alignment_validator is None else alignment_validator
 
     def provider_for(self, symbol: MarketSymbol) -> MarketDataProvider:
         for provider in self._providers:
             if symbol in provider.supported_symbols:
                 return provider
         raise MarketDataProviderNotConfiguredError(symbol.value)
+
+    async def get_closed_range(self, symbol: MarketSymbol, timeframe: Timeframe,
+                               start: datetime, end: datetime, *, page_limit: int = 1000) -> ValidatedMarketData:
+        """Exact server-owned range using the SAME registry and trust validator.
+
+        No sorting, gap repair, forward fill or independent market binding.
+        An outdated retrieval remains visibly stale; consumers must reject it.
+        """
+        start, end = normalize_utc_datetime(start), normalize_utc_datetime(end)
+        duration = timeframe_duration(timeframe)
+        if (start >= end or timeframe_bucket_start(start, timeframe) != start
+                or timeframe_bucket_start(end, timeframe) != end
+                or end > timeframe_bucket_start(normalize_utc_datetime(self._now()), timeframe)
+                or not 1 <= page_limit <= 1000):
+            raise ValueError('invalid closed market range')
+        provider = self.provider_for(symbol)
+        if not isinstance(provider, HistoricalRangeMarketDataProvider):
+            raise ValueError('configured provider range capability NOT_READY')
+        schedule = _resolve_provider_schedule(provider, symbol)
+        count = int((end - start) / duration)
+        proxy = _RangeProvider(provider, schedule, start, end, page_limit)
+        validated = await MarketDataService([proxy], now=self._now,
+            alignment_validator=self._alignment_validator).get_historical_candles(
+            MarketDataQuery(symbol=symbol, timeframe=timeframe, limit=count))
+        if (len(validated.candles) != count or validated.candles[0].timestamp != start
+                or validated.provenance.data_cutoff_at != end):
+            raise ValueError('incomplete closed market range')
+        return validated
 
     async def get_historical_candles(self, query: MarketDataQuery) -> ValidatedMarketData:
         provider = self.provider_for(query.symbol)
@@ -80,7 +112,7 @@ class MarketDataService:
                 )
             parsed_candles = _revalidate_parsed_provider_candles(provider_candles)
             duration = timeframe_duration(query.timeframe)
-            validate_candle_alignment(parsed_candles, query.timeframe)
+            self._alignment_validator(parsed_candles, query.timeframe)
             if any(
                 candle.timestamp + duration > retrieved_at
                 for candle in parsed_candles
@@ -104,6 +136,8 @@ class MarketDataService:
                 expected_timestamps=expected_timestamps,
             )
             candles = _construct_trusted_candles(parsed_candles)
+        except ResourceAdmissionError:
+            raise
         except SessionCalendarCoverageError as exc:
             raise MarketDataSessionCalendarUnavailableError(
                 provider.name,
@@ -172,6 +206,34 @@ class MarketDataService:
             close = getattr(provider, "aclose", None)
             if close is not None:
                 await close()
+
+
+class _RangeProvider:
+    """Internal pagination adapter, not another data source or strategy provider."""
+
+    def __init__(self, provider: HistoricalRangeMarketDataProvider, schedule: ProviderMarketSchedule,
+                 start: datetime, end: datetime, page_limit: int) -> None:
+        self.provider = provider
+        self.name, self.supported_symbols = provider.name, provider.supported_symbols
+        self.market_schedule = schedule
+        self.start, self.end, self.page_limit = start, end, page_limit
+
+    async def get_historical_candles(self, symbol: MarketSymbol, timeframe: Timeframe,
+                                     limit: int) -> Sequence[ParsedProviderCandle]:
+        duration = timeframe_duration(timeframe)
+        cursor = self.start
+        result: list[ParsedProviderCandle] = []
+        while cursor < self.end:
+            size = min(self.page_limit, int((self.end - cursor) / duration))
+            page_end = cursor + size * duration
+            page = _revalidate_parsed_provider_candles(list(await self.provider.get_historical_candles_between(
+                symbol, timeframe, cursor, page_end, size)))
+            validate_candle_order(page, timeframe)
+            if len(page) != size or page[0].timestamp != cursor or page[-1].timestamp + duration != page_end:
+                raise InvalidProviderPayloadError('range page is incomplete or crossed its bounds')
+            result.extend(page)
+            cursor = page_end
+        return result
 
 
 def _revalidate_parsed_provider_candles(

@@ -11,7 +11,6 @@ from alembic import command
 from alembic.config import Config
 import pytest
 from sqlalchemy import MetaData, Table, insert, inspect, literal, select, text, update
-from sqlalchemy.engine import make_url
 from sqlalchemy.exc import DataError, IntegrityError
 from sqlalchemy.orm import Session
 
@@ -88,30 +87,11 @@ def postgres_database() -> Database:
     raw_url = os.getenv("TEST_POSTGRES_URL")
     if raw_url is None:
         pytest.skip("TEST_POSTGRES_URL is required for PostgreSQL integration tests")
-    parsed = make_url(raw_url)
-    if parsed.drivername != "postgresql+psycopg":
-        pytest.fail("TEST_POSTGRES_URL must use postgresql+psycopg")
-    if parsed.database != "ai_trading_test" or parsed.host not in {
-        "127.0.0.1",
-        "localhost",
-    }:
-        pytest.fail("refusing to migrate a non-isolated PostgreSQL test database")
-
-    previous_url = os.environ.get("DATABASE_URL")
-    os.environ["DATABASE_URL"] = raw_url
-    alembic = Config(str(BACKEND_ROOT / "alembic.ini"))
-    alembic.set_main_option("sqlalchemy.url", raw_url)
-    command.upgrade(alembic, "head")
-    database = Database(raw_url)
-    try:
+    from tests.fixtures.foundation_capacity import owned_database
+    # Never clear retained admission/completion evidence via a production
+    # downgrade for teardown, or contaminate the next module's root DB.
+    with owned_database(raw_url) as (database, _nonce):
         yield database
-    finally:
-        database.dispose()
-        command.downgrade(alembic, "base")
-        if previous_url is None:
-            os.environ.pop("DATABASE_URL", None)
-        else:
-            os.environ["DATABASE_URL"] = previous_url
 
 
 @pytest.fixture(scope="module")
@@ -1781,7 +1761,7 @@ def test_new_migration_downgrades_and_reupgrades_without_hash_changes(
             record.algorithm_build_hash,
         )
 
-    raw_url = os.environ["TEST_POSTGRES_URL"]
+    raw_url = postgres_database.engine.url.render_as_string(hide_password=False)
     alembic = Config(str(BACKEND_ROOT / "alembic.ini"))
     alembic.set_main_option("sqlalchemy.url", raw_url)
     command.downgrade(alembic, "20260829_0002")
@@ -1834,7 +1814,7 @@ def test_migration_fails_closed_on_incompatible_existing_lifecycle_row(
 ) -> None:
     with postgres_database.session_factory.begin() as session:
         invalid_id = repository.create(session, golden_trade_create()).id
-    raw_url = os.environ["TEST_POSTGRES_URL"]
+    raw_url = postgres_database.engine.url.render_as_string(hide_password=False)
     alembic = Config(str(BACKEND_ROOT / "alembic.ini"))
     alembic.set_main_option("sqlalchemy.url", raw_url)
     command.downgrade(alembic, "20260829_0002")
@@ -2350,7 +2330,7 @@ def test_m05_migration_preflight_rejects_invalid_existing_row_without_rewrite(
     with postgres_database.session_factory.begin() as session:
         source_id = repository.create(session, no_trade_create()).id
 
-    raw_url = os.environ["TEST_POSTGRES_URL"]
+    raw_url = postgres_database.engine.url.render_as_string(hide_password=False)
     alembic = Config(str(BACKEND_ROOT / "alembic.ini"))
     alembic.set_main_option("sqlalchemy.url", raw_url)
     command.downgrade(alembic, "20260901_0004")

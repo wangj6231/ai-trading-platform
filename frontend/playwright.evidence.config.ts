@@ -1,0 +1,2 @@
+import { defineConfig } from "@playwright/test";
+export default defineConfig({ testDir: "./tests/evidence-browser", outputDir: "./node_modules/.cache/evidence-v2-results", workers: 1, retries: 0, timeout: 120_000, reporter: "list", use: { browserName: "chromium", channel: "chrome", baseURL: "http://127.0.0.1:4179", viewport: { width: 1440, height: 1100 } }, webServer: { command: "npx vite --config tests/evidence-browser/vite.config.ts", url: "http://127.0.0.1:4179/evidence.html", reuseExistingServer: false, timeout: 30_000 } });

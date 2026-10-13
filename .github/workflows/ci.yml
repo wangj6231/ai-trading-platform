@@ -25,14 +25,14 @@ jobs:
           POSTGRES_USER: ai_trading_test
           POSTGRES_PASSWORD: local-ci-test-only
         ports:
-          - 5432:5432
+          - 55432:5432
         options: >-
           --health-cmd "pg_isready -U ai_trading_test -d ai_trading_test"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
     env:
-      TEST_POSTGRES_URL: postgresql+psycopg://ai_trading_test:local-ci-test-only@127.0.0.1:5432/ai_trading_test
+      TEST_POSTGRES_URL: postgresql+psycopg://ai_trading_test:local-ci-test-only@127.0.0.1:55432/ai_trading_test
     defaults:
       run:
         working-directory: backend
@@ -44,7 +44,15 @@ jobs:
           cache: pip
           cache-dependency-path: backend/pyproject.toml
       - name: Install backend dependencies
-        run: python -m pip install -e ".[test]"
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal --component rustfmt --component clippy
+          python -m pip install maturin==1.15.0
+          cargo +1.99.0 fmt --manifest-path ../rust/utc_alignment/Cargo.toml --check
+          cargo +1.99.0 clippy --locked --manifest-path ../rust/utc_alignment/Cargo.toml --all-targets -- -D warnings
+          cargo +1.99.0 test --locked --manifest-path ../rust/utc_alignment/Cargo.toml
+          RUSTUP_TOOLCHAIN=1.99.0 python -m maturin build --locked --release --manifest-path ../rust/utc_alignment/Cargo.toml --out ../rust-wheels
+          python -m pip install ../rust-wheels/*.whl
+          python -m pip install -e ".[test]"
       - name: Ruff
         run: python -m ruff check app tests
       - name: Mypy
@@ -62,7 +70,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v7
         with:
-          node-version: "20"
+          node-version: "20.19.5"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - name: Install frontend dependencies
