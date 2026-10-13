@@ -2,7 +2,20 @@
 
 這是一個以可重現、可稽核與安全失敗為核心的 AI 輔助技術分析與 Paper 交易平台。它提供多週期分析儀表板、帳戶隔離的模擬委託／成交／持倉、交易 Journal 與統計，不連接 LIVE 券商，也不使用真實交易金鑰。
 
-> 目前狀態：決定性分析引擎、非同步評估、PostgreSQL 不可變稽核軌跡、回測框架、Next.js 分析介面，以及 authenticated Paper execution／Journal／Analytics 流程已完成多階段驗證。BTCUSDT／ETHUSDT 使用 Binance 公開 Spot Kline API 的已收盤 OHLCV；XAUUSD 尚未設定可靠 provider 時會明確拒絕，不補造價格。所有委託與成交僅屬 Paper 環境；系統仍不提供 LIVE 下單或資金操作。
+> 目前狀態：`FRONTEND-PRODUCT-V1` release candidate 已整理於 [PR #17](https://github.com/wangj6231/ai-trading-platform/pull/17)，尚未合併至受保護的 `main`。決定性分析引擎、非同步評估、PostgreSQL 不可變稽核軌跡、回測框架、Next.js 分析介面，以及 authenticated Paper execution／Journal／Analytics 流程已完成多階段驗證。BTCUSDT／ETHUSDT 使用 Binance 公開 Spot Kline API 的已收盤 OHLCV；XAUUSD 尚未設定可靠 provider 時會明確拒絕，不補造價格。所有委託與成交僅屬 Paper 環境；系統仍不提供 LIVE 下單或資金操作。
+
+## 目前公開驗證狀態
+
+| 項目 | 2026-10-14 驗證結果 |
+| --- | --- |
+| Release candidate | [PR #17](https://github.com/wangj6231/ai-trading-platform/pull/17) 已推送、可合併狀態為 clean；仍保持 open，未繞過 `main` ruleset |
+| 後端與 PostgreSQL | GitHub Actions 全量測試 2,227 項通過，4 個既有 warning，coverage 92.03% |
+| 前端 | 268 項 Vitest 通過；required CI 的 76 項 Playwright 通過；Next.js 16.4.0 production build 通過 |
+| 延伸瀏覽器驗證 | 本機共 127 項 production-browser 測試通過，涵蓋圖表／MTF、Product、Evidence、Density、Paper reconciliation 與 authenticated HTTP |
+| 安全狀態 | GitHub Secret Scanning 0 個 open alert；`Protect main` ruleset 啟用；未發布交易金鑰、資料庫、原始行情、第三方 PDF 或實驗原始輸出 |
+| 未完成界線 | 尚未證明策略獲利、真實市場延遲／成本、LIVE 券商安全或 production readiness；O3／雲端保存、災難復原與容量工作仍待完成 |
+
+最新 required-check 證據見 [Quality gates run 38435925057](https://github.com/wangj6231/ai-trading-platform/actions/runs/38435925057)，持續追蹤項目見 [Issue #6](https://github.com/wangj6231/ai-trading-platform/issues/6)。
 
 ## 履歷重點
 
@@ -18,7 +31,7 @@
 | 前端品質 | Next.js／TypeScript 響應式產品介面、server-only Paper credential、請求競態防護、單元與真實瀏覽器測試 |
 | 可營運性 | request/admission budget、structured telemetry、observation worker、bounded read model、retention lifecycle 與 Rust shadow seam |
 
-履歷用成果與畫面索引見 [PORTFOLIO_EVIDENCE.md](PORTFOLIO_EVIDENCE.md)；最新進度與下一階段請見 [PROJECT_STATUS.md](PROJECT_STATUS.md)；公開版驗證摘要見 [VERIFICATION.md](VERIFICATION.md)；安全邊界請見 [SECURITY.md](SECURITY.md)。目前各凍結切片的最新證據包含 2,226 個後端測試、481 個真實 PostgreSQL 案例、258 個前端 Vitest 與 129 個 production-browser 案例通過；這些數字來自各自標記的驗證階段，不會互相加總或冒充同一次執行。它們證明的是工程規則與回歸防護，不代表策略獲利、LIVE 成交品質或正式上線可用性。
+履歷用成果與畫面索引見 [PORTFOLIO_EVIDENCE.md](PORTFOLIO_EVIDENCE.md)；最新進度與下一階段請見 [PROJECT_STATUS.md](PROJECT_STATUS.md)；公開版驗證摘要見 [VERIFICATION.md](VERIFICATION.md)；安全邊界請見 [SECURITY.md](SECURITY.md)。CI 與本機延伸測試採不同範圍，數字分開呈現，不互相加總或冒充同一次執行。它們證明的是工程規則與回歸防護，不代表策略獲利、LIVE 成交品質或正式上線可用性。
 
 ## 產品範圍
 
