@@ -1,19 +1,16 @@
 """Real-PG financial parity and bounded observation database work."""
-import json
-from pathlib import Path
 
 import pytest
 from sqlalchemy import event, select, text, update
 
 from app.execution.models import OrderIntent
 from app.execution.records import ExecutionOrderRecord, ExecutionMarkRecord
-from tests.fixtures.gateway_hotpath_golden import CASES, batch, golden
+from tests.fixtures.gateway_hotpath_golden import CASES, EXPECTED_DIGESTS, batch, golden
 from tests.integration import test_execution_ledger as pg
 from tests.unit.test_paper_gateway import START
 from datetime import timedelta
 
 pytestmark = pytest.mark.postgresql
-GOLDENS = Path(__file__).resolve().parents[3] / 'experiments/execution_gateway_hotpath_v1/golden_before.json'
 
 
 @pytest.fixture
@@ -28,7 +25,7 @@ def gateway(postgres_database):
 
 @pytest.mark.parametrize('case', CASES)
 def test_frozen_canonical_financial_parity(gateway, case):
-    assert golden(gateway, case) == json.loads(GOLDENS.read_text(encoding='utf8'))[case]
+    assert golden(gateway, case) == EXPECTED_DIGESTS[case]
 
 
 @pytest.mark.parametrize('bars', [5, 205])

@@ -23,6 +23,22 @@ from tests.unit.test_paper_gateway import START, execute, observation
 CASES = ('market-long', 'market-short', 'limit-long', 'limit-short',
          'scale-long', 'scale-short', 'same-candle', 'rejected', 'cancelled', 'untouched')
 
+# Curated, non-sensitive digests migrated from the sealed pre-optimization
+# oracle. Keeping the hashes beside the deterministic fixture lets CI verify
+# financial parity without publishing the experiment's raw output directory.
+EXPECTED_DIGESTS = {
+    'cancelled': '342b9b454560545982779b4a7d7b1f76a551341e9786cef5bb0158b2c280f73e',
+    'limit-long': '3d79ff5a9d0cff276aff150b8f9b218c3a7c3292de468c336deca7cab58c0b9a',
+    'limit-short': '22e27a8aa725864af3e56c9d186f7a089c984f44d2ab6186d9098a8e9f3df22d',
+    'market-long': '9139fb6ee10ebd37dbebef77abea56cfcb5f619266caf203b633d69ff6cba2cd',
+    'market-short': '2e1b500ae2a1e5f4d1c9248cf1131b7dda4e2f4993147b0b8d3b168738d80436',
+    'rejected': '6128e2bc6169df0271b3e2c28c8ff9486e2667b68b20bb50acddfc8ca58d34c3',
+    'same-candle': 'c66ec6b0ab00109d4efafd9e30d8d208a950d2585d1deccba9c1f19bf3d1bf51',
+    'scale-long': '589bcafebd4483776074255e55329ded6ef75695bd5c5850645402cc46a2aec4',
+    'scale-short': '0569fef2f448834a7ed4af4304bd738e00ee9df36e49e192c9b40771745bd9d6',
+    'untouched': '9f864de577f70cef87ce0fc265ca8882d5eeb6ffb2bdff34699a5fa0e22ad2e8',
+}
+
 
 def batch(length, *, start=1, prices=None):
     candles = tuple(observation(START + timedelta(minutes=i),
