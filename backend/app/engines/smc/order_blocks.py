@@ -1,3 +1,4 @@
+from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -563,6 +564,12 @@ def analyze_order_blocks(
     order_blocks: list[_OrderBlockState] = []
     breakers: list[_BreakerState] = []
     rejections: list[OrderBlockRejection] = []
+    # Preserve original input order within each exact immutable reference.
+    # Cutoff filtering and stable confirmation/id sorting still run below.
+    displacement_by_structure: dict[str, list[OrderBlockDisplacementLink]] = defaultdict(list)
+    if cutoff is not None:
+        for link in qualified_displacements:
+            displacement_by_structure[link.structure_event].append(link)
 
     for event in structure_events:
         if cutoff is None or event.confirmed_at > cutoff:
@@ -571,8 +578,8 @@ def analyze_order_blocks(
         available_displacements = sorted(
             (
                 item
-                for item in qualified_displacements
-                if item.structure_event == event_ref and item.confirmed_at <= cutoff
+                for item in displacement_by_structure.get(event_ref, ())
+                if item.confirmed_at <= cutoff
             ),
             key=lambda item: (item.confirmed_at, item.displacement_id),
         )
@@ -629,9 +636,19 @@ def analyze_order_blocks(
             )
         )
 
+    # Keep the full original archive, but schedule lifecycle work only from each
+    # creation bar until a terminal state. Delayed displacement can reorder
+    # creation times, so merge by original input position before replaying a bar.
+    future_order_blocks: dict[int, list[tuple[int, _OrderBlockState]]] = defaultdict(list)
+    for position, zone in enumerate(order_blocks):
+        future_order_blocks[zone.created_bar_index].append((position, zone))
+    active_order_blocks: list[tuple[int, _OrderBlockState]] = []
+    active_breakers: list[_BreakerState] = []
     for bar_index, candle in enumerate(candles):
         confirmed_at = candle.timestamp + interval
-        for zone in order_blocks:
+        active_order_blocks.extend(future_order_blocks.pop(bar_index, ()))
+        active_order_blocks.sort(key=lambda item: item[0])
+        for _, zone in active_order_blocks:
             if bar_index < zone.created_bar_index or zone.status in {
                 OrderBlockStatus.INVALIDATED,
                 OrderBlockStatus.EXPIRED,
@@ -682,7 +699,9 @@ def analyze_order_blocks(
                 )
                 zone.invalidated_at = confirmed_at
                 if config.breaker_enabled:
-                    breakers.append(_new_breaker(zone, candle, confirmed_at, bar_index))
+                    new_breaker = _new_breaker(zone, candle, confirmed_at, bar_index)
+                    breakers.append(new_breaker)
+                    active_breakers.append(new_breaker)
                 continue
 
             overlap = candle.low <= zone.zone_high and candle.high >= zone.zone_low
@@ -711,7 +730,9 @@ def analyze_order_blocks(
                     OrderBlockStatus.EXPIRED,
                 )
 
-        for breaker in breakers:
+        active_order_blocks = [item for item in active_order_blocks
+            if item[1].status not in {OrderBlockStatus.INVALIDATED, OrderBlockStatus.EXPIRED}]
+        for breaker in active_breakers:
             if breaker.status in {
                 BreakerBlockStatus.INVALIDATED,
                 BreakerBlockStatus.EXPIRED,
@@ -767,6 +788,9 @@ def analyze_order_blocks(
                     BreakerBlockStatus.INVALIDATED,
                 )
                 breaker.invalidated_at = confirmed_at
+
+        active_breakers = [breaker for breaker in active_breakers
+            if breaker.status not in {BreakerBlockStatus.INVALIDATED, BreakerBlockStatus.EXPIRED}]
 
     return OrderBlockAnalysisResult(
         timeframe=timeframe,

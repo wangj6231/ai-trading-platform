@@ -1,8 +1,37 @@
-export const SYMBOLS = ["XAUUSD", "BTCUSDT", "ETHUSDT"] as const;
+export const SYMBOLS = ["BTCUSDT", "ETHUSDT"] as const;
 export type SymbolCode = (typeof SYMBOLS)[number];
 
-export const TIMEFRAMES = ["1m", "3m", "5m", "15m", "1h"] as const;
-export type Timeframe = (typeof TIMEFRAMES)[number];
+export const TIMEFRAMES = ["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "1d", "1w"] as const;
+export type DisplayTimeframe = (typeof TIMEFRAMES)[number];
+/** Market-data/display domain; never strategy selection authority. */
+export type Timeframe = DisplayTimeframe;
+export const STRATEGY_EVALUATION_CLOCK = "15m" as const;
+export const MTF_ROLES = ["MARKET_BIAS", "MARKET_STRUCTURE", "SETUP", "TRIGGER", "CONTEXT_ONLY"] as const;
+export type MTFRole = (typeof MTF_ROLES)[number];
+
+export interface StrategyProvenance {
+  symbol: SymbolCode;
+  evaluationClock: typeof STRATEGY_EVALUATION_CLOCK;
+  dataCutoffAt: string;
+  asOf?: string;
+  data?: MarketDataProvenance;
+  identity: { strategy_version: string; config_hash: string; algorithm_build_hash: string };
+  mtf: {
+    alignment: "ALIGNED" | "PARTIALLY_ALIGNED" | "CONFLICTING";
+    timeframes: Record<string, {
+      timeframe: Timeframe; role: MTFRole;
+      state: "BULLISH" | "BEARISH" | "RANGE" | "INSUFFICIENT_DATA";
+      available: boolean; stale: boolean; closed_bar_count: number; reason_codes: string[];
+      latest_closed_bar_at?: string | null;
+      state_confirmed_at?: string | null;
+    }>;
+    eligibility?: "LONG_ELIGIBLE" | "SHORT_ELIGIBLE" | "NO_TRADE";
+    trade_allowed?: boolean;
+    bullish_count?: number;
+    bearish_count?: number;
+    reason_codes?: string[];
+  } | null;
+}
 
 export type Decision = "LONG" | "SHORT" | "NO_TRADE";
 
@@ -139,6 +168,10 @@ export interface MacdPoint {
 }
 
 export interface AnalysisViewModel {
+  /** Original validated response retained by reference for inspection, never projection authority. */
+  sourceEvidence?: unknown;
+  /** Present on all validated API results; chart-only fixtures may omit it. */
+  strategy?: StrategyProvenance;
   supports: LevelOverlay[];
   resistances: LevelOverlay[];
   swings: SwingOverlay[];
@@ -148,8 +181,15 @@ export interface AnalysisViewModel {
 }
 
 export interface SignalViewModel {
+  sourceEvidence?: unknown;
   symbol: SymbolCode;
-  timeframe: Timeframe;
+  /** Wire field timeframe is the server-owned strategy clock, not chart period. */
+  strategyEvaluationClock: typeof STRATEGY_EVALUATION_CLOCK;
+  dataCutoffAt: string;
+  /** Actual server data evidence; optional only for legacy component fixtures. */
+  provenance?: MarketDataProvenance;
+  algorithmScore: number | null;
+  scoreBreakdown: Record<string, number>;
   decisionMode: "DETERMINISTIC_ONLY";
   aiValidationStatus: "NOT_REQUESTED";
   algorithmDecision: Decision;
@@ -170,4 +210,4 @@ export type LoadState<T> =
   | { status: "loading" }
   | { status: "ready"; data: T }
   | { status: "empty" }
-  | { status: "error"; message: string };
+  | { status: "error"; message: string; kind?: "contract" | "unavailable" };

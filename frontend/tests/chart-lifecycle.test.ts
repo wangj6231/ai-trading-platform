@@ -20,7 +20,7 @@ const FVG_FILLED_AT = "2025-01-01T00:15:00Z";
 
 const payload = {
   symbol: "BTCUSDT",
-  timeframe: "5m",
+  timeframe: "15m",
   source: "server-provider",
   retrieved_at: "2025-01-01T00:21:00Z",
   data_cutoff_at: "2025-01-01T00:20:00Z",
@@ -28,7 +28,7 @@ const payload = {
     provider: "server-provider",
     data_mode: "SERVER_PROVIDER",
     symbol: "BTCUSDT",
-    timeframe: "5m",
+    timeframe: "15m",
     first_candle_at: "2024-12-31T18:00:00Z",
     last_candle_at: "2025-01-01T00:15:00Z",
     data_cutoff_at: "2025-01-01T00:20:00Z",
@@ -44,9 +44,13 @@ const payload = {
     validated: true,
   },
   evaluation: {
+    symbol: "BTCUSDT", timeframe: "15m", as_of: "2025-01-01T00:20:00Z",
+    data_cutoff_at: "2025-01-01T00:20:00Z",
+    strategy_identity: { strategy_version: "fixture-v1", config_hash: "a".repeat(64), algorithm_build_hash: "b".repeat(64) },
+    multi_timeframe_result: null,
     indicator_snapshot: null,
     market_structure_snapshot: {
-      "5m": {
+      "15m": {
         confirmed_swings: [
           {
             swing_id: "swing-1",

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { SYMBOLS, TIMEFRAMES, MTF_ROLES, STRATEGY_EVALUATION_CLOCK } from "@/types/trading";
 import type {
   AnalysisViewModel,
   Decision,
@@ -8,8 +9,16 @@ import type {
   Timeframe,
 } from "@/types/trading";
 
-const SymbolSchema = z.enum(["XAUUSD", "BTCUSDT", "ETHUSDT"]);
-const TimeframeSchema = z.enum(["1m", "3m", "5m", "15m", "1h"]);
+const SymbolSchema = z.enum(SYMBOLS);
+export const DisplayTimeframeSchema = z.enum(TIMEFRAMES);
+const TimeframeSchema = DisplayTimeframeSchema;
+const StrategyClockSchema = z.literal(STRATEGY_EVALUATION_CLOCK);
+export const MTFRoleSchema = z.enum(MTF_ROLES);
+// Validation of the frozen live contract only. No client-side alignment/veto calculation.
+const LiveMTFRoleContract: Partial<Record<Timeframe, z.infer<typeof MTFRoleSchema>>> = {
+  "15m": "TRIGGER", "30m": "CONTEXT_ONLY", "1h": "MARKET_STRUCTURE",
+  "2h": "CONTEXT_ONLY", "4h": "MARKET_STRUCTURE", "1d": "MARKET_BIAS", "1w": "CONTEXT_ONLY",
+};
 const DecisionSchema = z.enum(["LONG", "SHORT", "NO_TRADE"]);
 const DirectionSchema = z.enum(["bullish", "bearish"]);
 const ApiErrorEnvelopeSchema = z
@@ -39,7 +48,7 @@ const PositiveNumberSchema = FiniteNumberSchema.refine(
   "Expected a positive number",
 );
 const NullablePositiveNumberSchema = z.union([z.null(), PositiveNumberSchema]);
-const ProvenanceSchema = z
+export const ProvenanceSchema = z
   .object({
     provider: z.string().min(1),
     data_mode: z.literal("SERVER_PROVIDER"),
@@ -133,7 +142,7 @@ const MarketDataSchema = z
 const SignalPayloadSchema = z
   .object({
     symbol: SymbolSchema,
-    timeframe: TimeframeSchema,
+    timeframe: StrategyClockSchema,
     source: z.string().min(1),
     retrieved_at: TimestampSchema,
     data_cutoff_at: TimestampSchema,
@@ -428,16 +437,59 @@ const MacdPointSchema = z
     histogram: FiniteNumberSchema.nullable(),
   })
   .passthrough();
+export const StrategyIdentitySchema = z.object({
+  strategy_version: z.string().min(1),
+  config_hash: z.string().regex(/^[0-9a-f]{64}$/),
+  algorithm_build_hash: z.string().regex(/^[0-9a-f]{64}$/),
+}).strict();
+const MTFTimeframeSchema = z.object({
+  timeframe: TimeframeSchema, role: MTFRoleSchema,
+  state: z.enum(["BULLISH", "BEARISH", "RANGE", "INSUFFICIENT_DATA"]),
+  available: z.boolean(), stale: z.boolean(),
+  state_event_id: z.string().nullable(), state_confirmed_at: TimestampSchema.nullable(),
+  source_bar_timestamp: TimestampSchema.nullable(), source_bar_close_time: TimestampSchema.nullable(),
+  latest_closed_bar_at: TimestampSchema.nullable(), bars_since_state: z.number().int().nonnegative().nullable(),
+  closed_bar_count: z.number().int().nonnegative(), reason_codes: z.array(z.string().min(1)),
+}).strict();
+const MTFSnapshotSchema = z.object({
+  snapshot_id: z.string().min(1), decision_time: TimestampSchema,
+  candidate_direction: DirectionSchema,
+  alignment: z.enum(["ALIGNED", "PARTIALLY_ALIGNED", "CONFLICTING"]),
+  eligibility: z.enum(["LONG_ELIGIBLE", "SHORT_ELIGIBLE", "NO_TRADE"]),
+  trade_allowed: z.boolean(), bullish_count: z.number().int().nonnegative(),
+  bearish_count: z.number().int().nonnegative(),
+  timeframes: z.record(z.string().refine((key) => DisplayTimeframeSchema.safeParse(key).success), MTFTimeframeSchema),
+}).passthrough().superRefine((mtf, context) => {
+  // Row presence is response completeness, NOT candle availability/required authority.
+  // Optional inputs remain valid rows with available=false; never block the signal here.
+  if (Object.keys(LiveMTFRoleContract).some((key) => !(key in mtf.timeframes))) {
+    context.addIssue({ code: "custom", message: "MTF response omitted an input status row" });
+  }
+  for (const [key, row] of Object.entries(mtf.timeframes)) {
+    if (row.timeframe !== key || LiveMTFRoleContract[row.timeframe] !== row.role) {
+      context.addIssue({ code: "custom", message: "MTF identity/role contract mismatch" });
+    }
+    for (const timestamp of [row.state_confirmed_at, row.source_bar_close_time, row.latest_closed_bar_at]) {
+      if (timestamp !== null && Date.parse(timestamp) > Date.parse(mtf.decision_time)) {
+        context.addIssue({ code: "custom", message: "MTF evidence is after evaluation cutoff" });
+      }
+    }
+  }
+});
 const AnalysisPayloadSchema = z
   .object({
     symbol: SymbolSchema,
-    timeframe: TimeframeSchema,
+    timeframe: StrategyClockSchema,
     source: z.string().min(1),
     retrieved_at: TimestampSchema,
     data_cutoff_at: TimestampSchema,
     provenance: ProvenanceSchema,
     evaluation: z
       .object({
+        symbol: SymbolSchema, timeframe: StrategyClockSchema,
+        as_of: TimestampSchema, data_cutoff_at: TimestampSchema,
+        strategy_identity: StrategyIdentitySchema,
+        multi_timeframe_result: MTFSnapshotSchema.nullable(),
         indicator_snapshot: z
           .object({ macd: z.object({ points: z.array(MacdPointSchema) }).passthrough() })
           .nullable(),
@@ -467,9 +519,17 @@ const AnalysisPayloadSchema = z
     ) {
       context.addIssue({ code: "custom", message: "Analysis provenance mismatch" });
     }
+    const evaluation = analysis.evaluation;
+    if (evaluation.symbol !== analysis.symbol || evaluation.timeframe !== analysis.timeframe ||
+        evaluation.data_cutoff_at !== analysis.data_cutoff_at ||
+        Date.parse(evaluation.data_cutoff_at) > Date.parse(evaluation.as_of) ||
+        (evaluation.multi_timeframe_result !== null &&
+         Date.parse(evaluation.multi_timeframe_result.decision_time) !== Date.parse(evaluation.data_cutoff_at))) {
+      context.addIssue({ code: "custom", message: "Strategy evaluation provenance mismatch" });
+    }
   });
 
-async function parseResponse(response: Response): Promise<unknown> {
+export async function parseResponse(response: Response): Promise<unknown> {
   const payload: unknown = await response.json().catch(() => null);
   if (!response.ok) {
     const parsed = ApiErrorEnvelopeSchema.safeParse(payload);
@@ -502,6 +562,13 @@ export class ApiRequestError extends Error {
   }
 }
 
+export class BackendContractError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "BackendContractError";
+  }
+}
+
 export async function fetchCandles(
   symbol: SymbolCode,
   timeframe: Timeframe,
@@ -528,48 +595,52 @@ export async function fetchCandles(
 
 export async function fetchAnalysis(
   symbol: SymbolCode,
-  timeframe: Timeframe,
   signal?: AbortSignal,
 ): Promise<AnalysisViewModel> {
   const response = await fetch("/api/analysis", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ symbol, timeframe }),
+    body: JSON.stringify({ symbol }),
     signal,
   });
-  return normalizeAnalysis(await parseResponse(response), symbol, timeframe);
+  return normalizeAnalysis(await parseResponse(response), symbol);
 }
 
 export async function fetchLatestSignal(
   symbol: SymbolCode,
-  timeframe: Timeframe,
   signal?: AbortSignal,
 ): Promise<SignalViewModel> {
   const response = await fetch("/api/signals", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ symbol, timeframe }),
+    body: JSON.stringify({ symbol }),
     signal,
     cache: "no-store",
   });
-  return parseSignalPayload(await parseResponse(response), symbol, timeframe);
+  return parseSignalPayload(await parseResponse(response), symbol);
 }
 
 export function parseSignalPayload(
   payload: unknown,
   requestedSymbol: SymbolCode,
-  requestedTimeframe: Timeframe,
+  displayTimeframe?: Timeframe,
 ): SignalViewModel {
+  if (displayTimeframe !== undefined) DisplayTimeframeSchema.parse(displayTimeframe);
   const parsed = SignalPayloadSchema.safeParse(payload);
   if (!parsed.success) {
-    throw new Error("Signal response failed safety validation.");
+    throw new BackendContractError("Signal response failed safety validation.");
   }
-  if (parsed.data.symbol !== requestedSymbol || parsed.data.timeframe !== requestedTimeframe) {
-    throw new Error("Signal response identity does not match the request.");
+  if (parsed.data.symbol !== requestedSymbol) {
+    throw new BackendContractError("Signal response identity does not match the request.");
   }
   return {
     symbol: parsed.data.symbol,
-    timeframe: parsed.data.timeframe,
+    strategyEvaluationClock: parsed.data.timeframe,
+    sourceEvidence: payload,
+    dataCutoffAt: parsed.data.data_cutoff_at,
+    provenance: parsed.data.provenance,
+    algorithmScore: parsed.data.algorithm_score,
+    scoreBreakdown: parsed.data.score_breakdown,
     decisionMode: parsed.data.decision_mode,
     aiValidationStatus: parsed.data.ai_validation_status,
     algorithmDecision: parsed.data.algorithm_decision,
@@ -590,13 +661,16 @@ export function parseSignalPayload(
 export function normalizeAnalysis(
   payload: unknown,
   requestedSymbol: SymbolCode,
-  requestedTimeframe: Timeframe,
+  displayTimeframe?: Timeframe,
 ): AnalysisViewModel {
-  const parsed = AnalysisPayloadSchema.parse(payload);
-  if (parsed.symbol !== requestedSymbol || parsed.timeframe !== requestedTimeframe) {
-    throw new Error("Analysis response identity does not match the request.");
+  if (displayTimeframe !== undefined) DisplayTimeframeSchema.parse(displayTimeframe);
+  const result = AnalysisPayloadSchema.safeParse(payload);
+  if (!result.success) throw new BackendContractError("Analysis response failed safety validation.");
+  const parsed = result.data;
+  if (parsed.symbol !== requestedSymbol) {
+    throw new BackendContractError("Analysis response identity does not match the request.");
   }
-  const structure = parsed.evaluation.market_structure_snapshot[requestedTimeframe];
+  const structure = parsed.evaluation.market_structure_snapshot[parsed.timeframe];
   const fvgZones = parsed.evaluation.smc_ict_snapshot?.fvg.zones ?? [];
   const orderBlocks = parsed.evaluation.smc_ict_snapshot?.order_blocks.order_blocks ?? [];
   const structures: AnalysisViewModel["structures"] = (
@@ -671,6 +745,13 @@ export function normalizeAnalysis(
     },
   );
   return {
+    strategy: {
+      symbol: parsed.symbol, evaluationClock: parsed.timeframe,
+      dataCutoffAt: parsed.data_cutoff_at, identity: parsed.evaluation.strategy_identity,
+      asOf: parsed.evaluation.as_of, data: parsed.provenance,
+      mtf: parsed.evaluation.multi_timeframe_result,
+    },
+    sourceEvidence: payload,
     supports: (structure?.support_candidates ?? []).map((level) => ({
       id: level.zone_id,
       lower: level.lower_bound,

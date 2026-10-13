@@ -4,20 +4,22 @@ import { formatTimeframe } from "@/lib/format";
 
 interface TopBarProps {
   symbol: SymbolCode;
-  timeframe: Timeframe;
+  displayTimeframe: Timeframe;
   onSymbolChange: (symbol: SymbolCode) => void;
-  onTimeframeChange: (timeframe: Timeframe) => void;
+  onDisplayTimeframeChange: (timeframe: Timeframe) => void;
   isLoading: boolean;
   source?: string;
+  feedStatus?: "CURRENT" | "STALE" | "UNKNOWN" | "UNAVAILABLE";
 }
 
 export function TopBar({
   symbol,
-  timeframe,
+  displayTimeframe,
   onSymbolChange,
-  onTimeframeChange,
+  onDisplayTimeframeChange,
   isLoading,
   source,
+  feedStatus = "UNKNOWN",
 }: TopBarProps) {
   return (
     <header className="top-bar">
@@ -25,7 +27,7 @@ export function TopBar({
         <div className="brand-mark" aria-hidden="true"><span /></div>
         <div>
           <div className="brand-name">AXIOM</div>
-          <div className="brand-subtitle">MARKET INTELLIGENCE</div>
+          <div className="brand-subtitle">BINANCE SPOT · PRODUCT V1</div>
         </div>
       </div>
 
@@ -35,22 +37,25 @@ export function TopBar({
           <select
             aria-label="Symbol"
             value={symbol}
-            onChange={(event) => onSymbolChange(event.target.value as SymbolCode)}
+            onChange={(event) => {
+              const next = SYMBOLS.find((value) => value === event.target.value);
+              if (next) onSymbolChange(next);
+            }}
           >
             {SYMBOLS.map((item) => <option key={item}>{item}</option>)}
           </select>
         </label>
 
-        <div className="timeframe-control" role="group" aria-label="Timeframe">
-          <span className="control-eyebrow">INTERVAL</span>
+        <div className="timeframe-control" role="group" aria-label="Chart timeframe">
+          <span className="control-eyebrow">CHART · DISPLAY ONLY</span>
           <div className="timeframe-buttons">
             {TIMEFRAMES.map((item) => (
               <button
                 type="button"
                 key={item}
-                className={item === timeframe ? "active" : ""}
-                aria-pressed={item === timeframe}
-                onClick={() => onTimeframeChange(item)}
+                className={item === displayTimeframe ? "active" : ""}
+                aria-pressed={item === displayTimeframe}
+                onClick={() => onDisplayTimeframeChange(item)}
               >
                 {formatTimeframe(item)}
               </button>
@@ -61,8 +66,8 @@ export function TopBar({
 
       <div className="terminal-status">
         <div className="feed-status">
-          <span className={`status-dot ${isLoading ? "pulse" : ""}`} />
-          <span>{isLoading ? "SYNCING" : source ? `${source.toUpperCase()} FEED` : "FEED IDLE"}</span>
+          <span className={`status-dot ${isLoading ? "pulse" : feedStatus.toLowerCase()}`} />
+          <span>{isLoading ? "SYNCING" : source ? `${source.toUpperCase()} · ${feedStatus}` : "FEED UNAVAILABLE"}</span>
         </div>
         <div className="analysis-only">ANALYSIS ONLY</div>
       </div>

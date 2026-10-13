@@ -1,3 +1,5 @@
+from bisect import bisect_right
+from collections import defaultdict
 from collections.abc import Sequence
 from datetime import datetime, timedelta
 from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal
@@ -38,6 +40,11 @@ from app.schemas.types import Timeframe
 
 class EntrySetupInputError(ValueError):
     pass
+
+
+def _first_after(items, timestamp):
+    position = bisect_right(items, timestamp, key=lambda item: item.confirmed_at)
+    return items[position] if position < len(items) else None
 
 
 TERMINAL_FVG_STATES = {
@@ -447,6 +454,20 @@ def detect_high_probability_entry_setups(
         displacement_events,
         key=lambda event: (event.confirmed_at, event.leg_id),
     )
+    # Read-only indexes local to this invocation. The original per-sweep helper
+    # still owns every predicate, stage expiry, retest and invalidation rule.
+    mss_by_direction: dict[StructureDirection, list[StructureBreakEvent]] = defaultdict(list)
+    for event in mss_events:
+        mss_by_direction[event.direction].append(event)
+    taken_by_pool: dict[str, list[LiquidityInteraction]] = defaultdict(list)
+    for taken_event in sorted(taken_events, key=lambda item: (item.confirmed_at, item.event_id)):
+        taken_by_pool[taken_event.pool_id].append(taken_event)
+    legs_by_structure: dict[tuple[str, DisplacementDirection], list[DisplacementLeg]] = defaultdict(list)
+    for leg in legs:
+        legs_by_structure[leg.associated_structure_break, leg.direction].append(leg)
+    zones_by_id: dict[str, list[tuple[int, GapZone]]] = defaultdict(list)
+    for position, zone in enumerate(fvg_zones):
+        zones_by_id[zone.zone_id].append((position, zone))
     setups: list[CompositeEntrySetup] = []
 
     for sweep in sorted(
@@ -457,6 +478,74 @@ def detect_high_probability_entry_setups(
         ),
         key=lambda event: (event.confirmed_at, event.event_id),
     ):
+        direction = _direction_from_sweep(sweep)
+        desired = _desired_structure_direction(direction)
+        opposite_direction = StructureDirection.BEARISH if desired is StructureDirection.BULLISH else StructureDirection.BULLISH
+        selected_mss = _first_after(mss_by_direction[desired], sweep.confirmed_at)
+        opposite = _first_after(mss_by_direction[opposite_direction], sweep.confirmed_at)
+        sweep_index = close_to_index[sweep.confirmed_at]
+        if selected_mss is not None and close_to_index[selected_mss.confirmed_at] - sweep_index > min(config.signal_max_bars_sweep_to_mss, config.signal_setup_max_total_bars):
+            selected_mss = None
+        selected_leg = None
+        if selected_mss is not None:
+            key = (structure_event_reference(selected_mss), _desired_displacement_direction(direction))
+            selected_leg = _first_after(legs_by_structure[key], selected_mss.confirmed_at)
+            if selected_leg is not None and (
+                close_to_index[selected_leg.confirmed_at] - close_to_index[selected_mss.confirmed_at] > config.signal_max_bars_mss_to_displacement
+                or close_to_index[selected_leg.confirmed_at] - sweep_index > config.signal_setup_max_total_bars
+            ):
+                selected_leg = None
+        taken = _first_after(taken_by_pool[sweep.pool_id], sweep.confirmed_at)
+        # Preserve duplicate IDs and original zone order, including selection ties.
+        linked = sorted((item for identity in set(selected_leg.associated_fvg)
+                         for item in zones_by_id[identity]), key=lambda item: item[0]) if selected_leg is not None else []
+        setups.append(_evaluate_sweep(sweep,
+            candles=candles,
+            interval=interval,
+            cutoff=cutoff,
+            timestamp_to_index=timestamp_to_index,
+            close_to_index=close_to_index,
+            current_index=current_index,
+            dual_event_ids=dual_event_ids,
+            taken_events=[taken] if taken is not None else [],
+            mss_events=sorted((item for item in (selected_mss, opposite) if item is not None), key=lambda item: (item.confirmed_at, structure_event_reference(item))),
+            legs=[selected_leg] if selected_leg is not None else [],
+            fvg_zones=[zone for _, zone in linked],
+            config=config,
+            order_blocks=order_blocks,
+            atr_result=atr_result,
+        ))
+
+    return EntrySetupAnalysisResult(
+        timeframe=timeframe,
+        config=config,
+        candle_count=len(candles),
+        data_cutoff_at=cutoff,
+        setups=setups,
+    )
+
+
+def _evaluate_sweep(
+    sweep: LiquidityInteraction,
+    *,
+    candles: Sequence[Candle],
+    interval: timedelta,
+    cutoff: datetime,
+    timestamp_to_index: dict[datetime, int],
+    close_to_index: dict[datetime, int],
+    current_index: int,
+    dual_event_ids: set[str],
+    taken_events: Sequence[LiquidityInteraction],
+    mss_events: Sequence[StructureBreakEvent],
+    legs: Sequence[DisplacementLeg],
+    fvg_zones: Sequence[GapZone],
+    config: EntrySetupConfig,
+    order_blocks: Sequence[OrderBlockZone],
+    atr_result: ATRResult | None,
+) -> CompositeEntrySetup:
+    """Shared unchanged per-sweep rules; caller supplies canonically ordered evidence."""
+    setups: list[CompositeEntrySetup] = []
+    for sweep in (sweep,):
         direction = _direction_from_sweep(sweep)
         sweep_index = close_to_index[sweep.confirmed_at]
         source_candle = candles[timestamp_to_index[sweep.timestamp]]
@@ -810,10 +899,4 @@ def detect_high_probability_entry_setups(
             )
         )
 
-    return EntrySetupAnalysisResult(
-        timeframe=timeframe,
-        config=config,
-        candle_count=len(candles),
-        data_cutoff_at=cutoff,
-        setups=setups,
-    )
+    return setups[0]

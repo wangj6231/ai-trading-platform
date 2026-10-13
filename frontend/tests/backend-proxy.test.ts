@@ -74,9 +74,10 @@ describe("backend proxy failure boundary", () => {
       "http://localhost:8000/api/v1/market/candles?symbol=XAUUSD&timeframe=5m",
       expect.objectContaining({
         cache: "no-store",
-        headers: expect.objectContaining({ Accept: "application/json" }),
+        headers: expect.any(Headers),
       }),
     );
+    expect(new Headers(backendFetch.mock.calls[0][1]?.headers).get("Accept")).toBe("application/json");
   });
 
   it.each([

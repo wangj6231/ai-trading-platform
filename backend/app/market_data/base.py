@@ -48,6 +48,29 @@ class MarketDataProvider(Protocol):
 
 
 @runtime_checkable
+class HistoricalRangeMarketDataProvider(Protocol):
+    """Optional server-owned range capability for deterministic bootstraps.
+
+    The ordinary provider method remains the live/latest-candles contract.  A
+    bootstrap may use this stronger capability to page a bounded historical
+    range without exposing provider details to strategy code.
+    """
+
+    name: str
+    supported_symbols: frozenset[MarketSymbol]
+
+    async def get_historical_candles_between(
+        self,
+        symbol: MarketSymbol,
+        timeframe: Timeframe,
+        start: datetime,
+        end: datetime,
+        limit: int,
+    ) -> Sequence[ParsedProviderCandle]:
+        ...
+
+
+@runtime_checkable
 class StreamingMarketDataProvider(Protocol):
     """Optional future capability; strategies do not depend on this protocol."""
 

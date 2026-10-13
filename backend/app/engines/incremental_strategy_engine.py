@@ -537,8 +537,7 @@ class _StructureState:
                 )
             )
 
-    def _append_structure_event(self, candle: Candle, bar_index: int) -> None:
-        duration = timeframe_duration(self.timeframe)
+    def _break_context(self, candle: Candle):
         eligible = [
             item for item in self.confirmed if item.confirmed_at <= candle.timestamp
         ]
@@ -549,6 +548,14 @@ class _StructureState:
         down = _latest_unbroken_swing(
             eligible, SwingKind.LOW, candle.timestamp, self.broken_ids
         )
+        return trend, up, down
+
+    def _result_trend(self):
+        return _classify_trend(self.confirmed, self.config)
+
+    def _append_structure_event(self, candle: Candle, bar_index: int) -> None:
+        duration = timeframe_duration(self.timeframe)
+        trend, up, down = self._break_context(candle)
         if self.config.structure_break_basis.value == "CLOSE":
             up_value, down_value = candle.close, candle.close
         else:
@@ -611,7 +618,7 @@ class _StructureState:
             confirmed_swings=list(self.confirmed),
             support_candidates=list(self.zones[ZoneKind.SUPPORT]),
             resistance_candidates=list(self.zones[ZoneKind.RESISTANCE]),
-            trend_state=_classify_trend(self.confirmed, self.config),
+            trend_state=self._result_trend(),
             structure_events=list(self.events),
             structure_rejections=list(self.rejections),
         )
@@ -624,6 +631,15 @@ class _FVGState:
     candles: tuple[Candle, ...] = ()
     zones: list[_ZoneState] = field(default_factory=list)
     rejections: list[FVGRejection] = field(default_factory=list)
+
+    def _add_zone(self, zone: _ZoneState) -> None:
+        self.zones.append(zone)
+
+    def _zones_for_update(self):
+        return list(self.zones)
+
+    def _after_bar(self) -> None:
+        pass
 
     def reset(self) -> None:
         self.candles = ()
@@ -682,7 +698,7 @@ class _FVGState:
                             )
                         )
                     elif bullish:
-                        self.zones.append(
+                        self._add_zone(
                             _new_fvg(
                                 direction=GapDirection.BULLISH,
                                 lower=first.high,
@@ -693,7 +709,7 @@ class _FVGState:
                             )
                         )
                     elif bearish:
-                        self.zones.append(
+                        self._add_zone(
                             _new_fvg(
                                 direction=GapDirection.BEARISH,
                                 lower=bar.high,
@@ -704,13 +720,15 @@ class _FVGState:
                             )
                         )
             new_ifvgs: list[_ZoneState] = []
-            for zone in list(self.zones):
+            for zone in self._zones_for_update():
                 if bar.timestamp < zone.confirmed_at:
                     continue
                 created = _update_zone(zone, bar, index, confirmed_at, self.config)
                 if created is not None:
                     new_ifvgs.append(created)
-            self.zones.extend(new_ifvgs)
+            for zone in new_ifvgs:
+                self._add_zone(zone)
+            self._after_bar()
 
     def result(self, atr_result: ATRResult | None) -> FVGAnalysisResult:
         return FVGAnalysisResult(
@@ -754,6 +772,25 @@ class _LiquidityState:
         self.swing_index = 0
         self.swings = ()
 
+    def _indices(self, incoming, atr_result, interval):
+        close_index = {
+            item.timestamp + interval: index for index, item in enumerate(incoming)
+        }
+        atr_by_confirmation = (
+            {item.timestamp + interval: point.atr for item, point in zip(incoming, atr_result.points, strict=True)}
+            if atr_result is not None else {}
+        )
+        return close_index, atr_by_confirmation
+
+    def _add_pool(self, pool):
+        self.pools.append(pool)
+
+    def _interaction_pools(self):
+        return self.pools
+
+    def _after_bar(self) -> None:
+        """Extension seam; P3 deliberately keeps the original full archive path."""
+
     def append(
         self,
         candles: Sequence[Candle],
@@ -765,24 +802,14 @@ class _LiquidityState:
             self.reset()
         self.swings = tuple(swings)
         interval = timeframe_duration(self.timeframe)
-        close_index = {
-            item.timestamp + interval: index for index, item in enumerate(incoming)
-        }
-        atr_by_confirmation = (
-            {
-                item.timestamp + interval: point.atr
-                for item, point in zip(incoming, atr_result.points, strict=True)
-            }
-            if atr_result is not None
-            else {}
-        )
+        close_index, atr_by_confirmation = self._indices(incoming, atr_result, interval)
 
         def consume_swing(swing: ConfirmedSwing) -> None:
             confirmed_bar_index = close_index.get(swing.confirmed_at)
             if confirmed_bar_index is None:
                 raise ValueError("swing confirmed_at must align with candle close")
             if self.config.liquidity_include_single_swing_pools:
-                self.pools.append(
+                self._add_pool(
                     _new_single_pool(swing, self.config, confirmed_bar_index)
                 )
             direction = _side_for(swing)
@@ -811,7 +838,7 @@ class _LiquidityState:
                 matching.contains_relative_member = True
             pool = _update_cluster_pool(matching, self.config, confirmed_bar_index)
             if pool is not None and pool not in self.pools:
-                self.pools.append(pool)
+                self._add_pool(pool)
 
         for bar_index, candle in enumerate(
             incoming[len(self.candles) :], start=len(self.candles)
@@ -825,7 +852,7 @@ class _LiquidityState:
                 self.swing_index += 1
             confirmed_at = candle.timestamp + interval
             bar_events = []
-            for pool in self.pools:
+            for pool in self._interaction_pools():
                 event = _process_interaction(pool, candle, confirmed_at, self.config)
                 if event is not None:
                     self.interactions.append(event)
@@ -870,6 +897,8 @@ class _LiquidityState:
                 consume_swing(self.swings[self.swing_index])
                 self.swing_index += 1
 
+            self._after_bar()
+
     def result(self) -> LiquidityAnalysisResult:
         return LiquidityAnalysisResult(
             timeframe=self.timeframe,
@@ -903,6 +932,23 @@ class _DisplacementState:
         self.legs_by_event.clear()
         self.evaluations_by_event.clear()
 
+    def _indices(self):
+        true_ranges: list[Decimal] = []
+        for index, candle in enumerate(self.candles):
+            if index == 0:
+                true_ranges.append(candle.high - candle.low)
+            else:
+                previous = self.candles[index - 1].close
+                true_ranges.append(max(candle.high - candle.low,
+                    abs(candle.high - previous), abs(candle.low - previous)))
+        return true_ranges, {item.timestamp: index for index, item in enumerate(self.candles)}
+
+    def _pending_events(self):
+        return self.structure_events
+
+    def _after_evaluation(self):
+        pass
+
     def append(
         self,
         candles: Sequence[Candle],
@@ -914,24 +960,9 @@ class _DisplacementState:
             self.reset()
         self.candles = incoming
         self.structure_events = tuple(structure_events)
-        true_ranges: list[Decimal] = []
-        for index, candle in enumerate(self.candles):
-            if index == 0:
-                true_ranges.append(candle.high - candle.low)
-            else:
-                previous = self.candles[index - 1].close
-                true_ranges.append(
-                    max(
-                        candle.high - candle.low,
-                        abs(candle.high - previous),
-                        abs(candle.low - previous),
-                    )
-                )
-        timestamp_to_index = {
-            item.timestamp: index for index, item in enumerate(self.candles)
-        }
+        true_ranges, timestamp_to_index = self._indices()
         interval = timeframe_duration(self.timeframe)
-        for event in self.structure_events:
+        for event in self._pending_events():
             ref = structure_event_reference(event)
             if ref in self.legs_by_event:
                 continue
@@ -1053,6 +1084,8 @@ class _DisplacementState:
                     reason_codes=latest_reasons,
                 )
 
+        self._after_evaluation()
+
     def result(self) -> DisplacementAnalysisResult:
         order = {
             structure_event_reference(event): index
@@ -1091,6 +1124,24 @@ class _OrderBlockIncrementalState:
     rejections: list[OrderBlockRejection] = field(default_factory=list)
     processed_events: set[str] = field(default_factory=set)
 
+    def _indices(self, interval):
+        return (
+            {item.timestamp: index for index, item in enumerate(self.candles)},
+            {item.timestamp + interval: index for index, item in enumerate(self.candles)},
+        )
+
+    def _events_for_creation(self, cutoff):
+        return self.structure_events
+
+    def _add_order_block(self, zone):
+        self.order_blocks.append(zone)
+
+    def _interaction_zones(self):
+        return self.order_blocks
+
+    def _after_bar(self):
+        pass
+
     def reset(self) -> None:
         self.candles = ()
         self.structure_events = ()
@@ -1116,18 +1167,13 @@ class _OrderBlockIncrementalState:
         self.candles = incoming
         self.structure_events = tuple(structure_events)
         interval = timeframe_duration(self.timeframe)
-        timestamp_to_index = {
-            item.timestamp: index for index, item in enumerate(self.candles)
-        }
-        close_to_index = {
-            item.timestamp + interval: index for index, item in enumerate(self.candles)
-        }
+        timestamp_to_index, close_to_index = self._indices(interval)
         cutoff = self.candles[-1].timestamp + interval if self.candles else None
 
         # A structure event first becomes available at its own confirmation;
         # creation is therefore append-only and can never be rewritten by a
         # later liquidity member.
-        for event in self.structure_events:
+        for event in self._events_for_creation(cutoff):
             event_ref = structure_event_reference(event)
             if (
                 event_ref in self.processed_events
@@ -1177,7 +1223,7 @@ class _OrderBlockIncrementalState:
                     )
                 )
                 continue
-            self.order_blocks.append(
+            self._add_order_block(
                 _new_order_block(
                     event=event,
                     event_ref=event_ref,
@@ -1196,7 +1242,7 @@ class _OrderBlockIncrementalState:
         for bar_index in range(old_count, len(self.candles)):
             candle = self.candles[bar_index]
             confirmed_at = candle.timestamp + interval
-            for zone in self.order_blocks:
+            for zone in self._interaction_zones():
                 if bar_index < zone.created_bar_index or zone.status in {
                     OrderBlockStatus.INVALIDATED,
                     OrderBlockStatus.EXPIRED,
@@ -1328,6 +1374,7 @@ class _OrderBlockIncrementalState:
                         BreakerBlockStatus.INVALIDATED,
                     )
                     breaker.invalidated_at = confirmed_at
+            self._after_bar()
 
     def result(self) -> OrderBlockAnalysisResult:
         return OrderBlockAnalysisResult(

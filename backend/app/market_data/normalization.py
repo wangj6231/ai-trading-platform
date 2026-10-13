@@ -11,7 +11,7 @@ from app.market_data.exceptions import (
     SessionCalendarMismatchError,
     TimeframeAlignmentError,
 )
-from app.market_data.timeframes import timeframe_duration, timeframe_milliseconds
+from app.market_data.timeframes import timeframe_bucket_start, timeframe_duration
 from app.schemas.types import Timeframe
 
 
@@ -64,11 +64,9 @@ def validate_candle_alignment(
 ) -> None:
     """Validate UTC bucket alignment without changing sequence order."""
 
-    interval_ms = timeframe_milliseconds(timeframe)
     for candle in candles:
         utc_timestamp = normalize_utc_datetime(candle.timestamp)
-        timestamp_ms = int(utc_timestamp.timestamp() * 1000)
-        if timestamp_ms % interval_ms != 0:
+        if timeframe_bucket_start(utc_timestamp, timeframe) != utc_timestamp:
             raise TimeframeAlignmentError(
                 f"Candle timestamp {utc_timestamp.isoformat()} is not aligned to {timeframe.value}"
             )

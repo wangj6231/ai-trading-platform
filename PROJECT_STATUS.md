@@ -1,92 +1,112 @@
 # Project status
 
-Last updated: 2026-09-07
+Last updated: 2026-10-13 (Asia/Taipei)
 
 ## Current milestone
 
-The deterministic engineering baseline is complete and frozen for research.
-The application provides market-data validation, rule-based technical analysis,
-risk gating, optional bounded AI validation, immutable signal persistence,
-backtesting, and a Next.js analysis dashboard. It deliberately has no broker
-execution or fund-management path.
+The repository has progressed from a deterministic analysis baseline to a
+portfolio-ready **Paper trading product foundation**. It now combines a
+Next.js dashboard, asynchronous strategy evaluation, authenticated and
+account-scoped Paper execution, PostgreSQL-backed orders/fills/positions,
+automatic Journal capture, analytics, observation work, and retention/read
+models.
 
-The experimental P3 incremental replay path has completed its scoped
-equivalence and performance assessment. It is not frozen or enabled by default:
-measured throughput improved, but later-window evaluation cost still grows too
-quickly for a complete Q1 replay to be considered operationally ready.
+This is still a research and Paper environment. It has no LIVE broker adapter,
+does not hold exchange trading credentials, and does not establish strategy
+profitability, production availability, disaster recovery, or commercial
+capacity.
 
-## Verified engineering baseline
+## Verified delivered slices
 
-- Backend: FastAPI, SQLAlchemy, Alembic, PostgreSQL 16, typed Pydantic contracts.
-- Analysis: closed-candle indicators, market structure, liquidity, FVG/IFVG,
-  order blocks, CRT, multi-timeframe alignment, and explicit risk contracts.
-- Reproducibility: canonical dataset, strategy, configuration, source, and run
-  identities; direct analysis and backtest use the same deterministic engine.
-- Persistence: PostgreSQL checks and triggers protect planned, lifecycle,
-  execution, financial, snapshot, and AI-validation evidence from invalid or
-  historical rewrites.
-- Frontend: Next.js dashboard with explicit unavailable/no-signal states and
-  request-race protection.
+- **Analysis dashboard:** closed-candle market data, deterministic multi-
+  timeframe strategy evidence, explicit `LONG` / `SHORT` / `NO_TRADE`, and an
+  asynchronous evaluation lifecycle with cancel, failure, stale, and
+  unavailable states. Display timeframe remains separate from server-owned
+  strategy authority.
+- **Paper workflow:** account summary, order ticket, orders, fills, positions,
+  Journal, trade detail, attachments, and analytics across desktop and mobile.
+  The HTTP-backed path uses server-side bearer credentials and has no fixture
+  fallback when the backend fails.
+- **Execution integrity:** PostgreSQL constraints and triggers protect order,
+  fill, position, trade, attachment, lifecycle, and completion evidence.
+  Account-scoped authorization, idempotent commands, concurrency races, and
+  direct-SQL mutation attempts are covered by tests.
+- **Operational foundation:** bounded request/admission controls, database
+  resource budgets, structured telemetry, an observation worker with durable
+  checkpoints and active-work projection, and bounded Dashboard composition.
+- **Retention and object evidence:** financial retention lifecycle and object
+  binary O1/O2 public seams are implemented and tested. O3 deployment adapter,
+  market archive, scheduled retention jobs, and destructive purge remain out
+  of scope and unimplemented.
+- **Native compute seam:** a bounded Rust/PyO3 UTC-alignment implementation can
+  run in shadow comparison behind the Python authority. It is parity/safety
+  work, not a speedup or authoritative-native claim.
 
-The frozen V4.2 verification record reports 867 backend tests, 109 dedicated
-real-PostgreSQL tests, 69 frontend unit/component tests, and 74 real-Chrome
-browser cases passing. This record is evidence for engineering invariants, not
-evidence of strategy profitability or live execution quality. See the
-public-safe [verification summary](VERIFICATION.md).
+## Latest accepted verification evidence
 
-The initial GitHub publication CI then passed 899 backend tests against its
-PostgreSQL 16 service at 90.90% line coverage. Frontend CI passed 69
-unit/component tests at 83.76% statements/lines, 77.37% branches, and 89.13%
-functions; all 74 Chromium cases and the production build also passed.
+The figures below come from the latest accepted report for each independently
+frozen slice. They are not added together and are not represented as one
+simultaneous run.
 
-## P3 incremental replay milestone
+| Area | Latest accepted evidence |
+| --- | --- |
+| Backend through object-binary O2 | 2,226 distinct tests passed in disjoint non-PostgreSQL and PostgreSQL 16.11 partitions; 481 actual PostgreSQL cases; Ruff, mypy, compileall, and diff check passed |
+| Backend coverage at financial-retention F5-A | 2,071 tests passed; 435 actual PostgreSQL cases; 91.96% combined line coverage with the unchanged 90% gate |
+| Frontend and Paper end-to-end | 258 Vitest tests and 129 production-browser cases passed; TypeScript, ESLint, and Next production build passed |
+| Rust UTC-alignment seam | 8 Rust unit tests plus fmt/clippy passed; Windows wheel runtime smoke passed; the containing backend checkpoint reported 1,968 tests and 92.07% coverage |
 
-- The R1 differential replay matched the reference output at all 1,440
-  cutoffs, including the complete backtest report.
-- Transition and configuration-variant tests matched full reference/P3 output
-  across 40 transition prefixes and 520 instrumented variant evaluations.
-- The isolated Q1 measurement stopped cleanly at its predeclared cap after
-  7,591 of 129,600 evaluations. Observed aggregate throughput improved from
-  1.493 to 4.338 evaluations/second (about 2.9x), while per-evaluation cost
-  continued to increase in later windows.
-- The reviewed classification remains `PERFORMANCE_STILL_INSUFFICIENT`; no
-  strategy parameters, risk rules, execution rules, or frozen research
-  artifacts were changed to obtain the result.
-- A fresh publication check independently re-ran all 26 P3 differential and
-  lifecycle tests successfully.
+The 2026-10-13 publication preflight additionally passed backend static checks,
+299 focused backend security/product tests, 268 frontend coverage tests, 127
+browser cases, and the production build. Complete current PostgreSQL and Rust
+verification remains delegated to the protected pull request checks rather than
+being inferred from this focused local run.
 
-See the [P3 engineering report](experiments/r1e_p3_incremental/P3_REPORT.md).
-Generated measurements, raw logs, coverage files, and profiler output remain
-excluded from the portfolio repository.
+The detailed counting rules, retained failed attempts, environment limits, and
+stop conditions live in the phase reports, especially
+[PAPER_E2E_V1_REPORT.md](PAPER_E2E_V1_REPORT.md),
+[PRODUCT_FOUNDATION_F4_1_REPORT.md](PRODUCT_FOUNDATION_F4_1_REPORT.md),
+[PRODUCT_FOUNDATION_F5_REPORT.md](PRODUCT_FOUNDATION_F5_REPORT.md),
+[PRODUCT_FOUNDATION_F5_B_REPORT.md](PRODUCT_FOUNDATION_F5_B_REPORT.md), and
+[RUST_CORE_BOOTSTRAP_V1_REPORT.md](RUST_CORE_BOOTSTRAP_V1_REPORT.md).
 
-## Publication safety review
+## Security and publication boundary
 
-- Repository candidates are filtered by `.gitignore` to exclude local secrets,
-  private keys, database files and dumps, dependencies, caches, build output,
-  raw provider responses, raw market-data payloads, profiler binaries, and
-  third-party reference PDFs.
-- `.env.example` contains placeholders only; real deployment values remain out
-  of version control.
-- The default Compose configuration keeps PostgreSQL off host ports.
-- A fresh publication preflight re-runs focused deployment-security and real
-  PostgreSQL integrity tests before the initial GitHub push.
+- Real `.env` files, keys, database files/dumps, raw provider payloads, raw
+  market history, generated profiler/coverage output, and third-party PDFs stay
+  out of Git.
+- Browser code never receives the backend Paper bearer credential. The Next.js
+  proxy owns that server-side boundary and rejects missing/malformed settings.
+- PostgreSQL is the authority for financial history. Application validation is
+  additive; database constraints, triggers, transactions, and immutable
+  receipts remain the final local integrity boundary.
+- Public screenshots and fixtures are labelled as DEV, fixture, or recorded
+  evidence. They are not presented as LIVE execution.
+- The protected `main` branch requires pull requests and both repository quality
+  checks before merge.
 
-## Next research stages
+## Open boundaries and next stages
 
-1. Preserve the frozen strategy/configuration baseline.
-2. Diagnose the remaining P3 historical-scan bottlenecks without changing
-   strategy semantics or frozen research artifacts.
-3. Complete the full replay/equivalence gate before any official research run.
-4. Complete untouched historical baseline evaluation.
-5. Run walk-forward and out-of-sample validation without leakage.
-6. Run paper-trading simulation with realistic costs and latency.
-7. Consider deployment or broker integration only after a separate safety and
-   authorization review.
+1. Complete object-storage O3 only after an adapter, encryption, durability,
+   timeout, and failure contract is approved and measured.
+2. Implement and verify market archive and retention jobs without authorizing
+   destructive financial-history purge.
+3. Select an actual deployment target, managed-secret flow, private database
+   network, backup/WAL policy, and isolated restore drill before any production
+   readiness claim.
+4. Run predeclared load and failure tests against approved capacity/SLO targets;
+   current bounded interfaces are not a commercial-capacity result.
+5. Keep Paper execution separate from LIVE broker execution. Any LIVE adapter,
+   real credential, automated strategy dispatch, or funds path needs a new
+   security and owner-authorization gate.
+6. Evaluate strategy quality only with separately locked out-of-sample and
+   walk-forward methodology. Engineering regression results are not financial
+   performance evidence.
 
 ## Portfolio framing
 
-This project demonstrates deterministic financial software design, temporal
-data-leakage prevention, database-enforced auditability, reproducible backtests,
-safe AI boundaries, full-stack delivery, and evidence-based verification. It
-must not be presented as a profitable strategy, financial advice, or a
-production trading system.
+This project demonstrates deterministic financial-domain engineering,
+look-ahead prevention, authenticated multi-account Paper workflows,
+database-enforced auditability, async job ownership, idempotency and race
+handling, responsive full-stack UI delivery, bounded operational interfaces,
+and evidence-led verification. It must not be described as a profitable
+strategy, financial advice, a LIVE trading system, or production-ready service.

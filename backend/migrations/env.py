@@ -7,6 +7,11 @@ from sqlalchemy import engine_from_config, pool
 from app.core.config import Settings
 from app.database.db import Base
 from app.models import SignalRecord  # noqa: F401
+from app.execution import records  # noqa: F401
+from app.journal import records as journal_records  # noqa: F401
+from app.auth import records as auth_records  # noqa: F401
+from app.observation import records as observation_records  # noqa: F401
+from app.retention import records as retention_records  # noqa: F401
 
 
 config = context.config

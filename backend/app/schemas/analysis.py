@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.core.time import UtcDateTime
 from app.schemas.market import MarketDataProvenance
@@ -12,7 +12,10 @@ class ProductionAnalysisRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     symbol: MarketSymbol
-    timeframe: Timeframe
+    timeframe: Timeframe | None = Field(
+        default=None, deprecated=True,
+        description="Display-only compatibility hint; never selects a strategy pipeline.",
+    )
     cutoff: UtcDateTime | None = None
 
 

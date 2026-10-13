@@ -1,8 +1,8 @@
 # AI Trading Platform
 
-這是一個以可重現、可稽核與安全失敗為核心的 AI 輔助技術分析平台。它提供類似簡化版 TradingView 的網頁體驗，只產生與保存研究訊號，不連接券商下單，也不執行真實交易。
+這是一個以可重現、可稽核與安全失敗為核心的 AI 輔助技術分析與 Paper 交易平台。它提供多週期分析儀表板、帳戶隔離的模擬委託／成交／持倉、交易 Journal 與統計，不連接 LIVE 券商，也不使用真實交易金鑰。
 
-> 目前狀態：決定性分析引擎、風險檢查、可選的 OpenAI 二次驗證、PostgreSQL 不可變稽核軌跡、回測框架與 Next.js 分析介面已完成工程基線。BTCUSDT／ETHUSDT 使用 Binance 公開 Spot Kline API 的已收盤 OHLCV；XAUUSD 尚未設定可靠 provider 時會明確拒絕，不補造價格。前端已接上分析 API，保留 unavailable／no-signal 的安全狀態；系統仍不提供下單。
+> 目前狀態：決定性分析引擎、非同步評估、PostgreSQL 不可變稽核軌跡、回測框架、Next.js 分析介面，以及 authenticated Paper execution／Journal／Analytics 流程已完成多階段驗證。BTCUSDT／ETHUSDT 使用 Binance 公開 Spot Kline API 的已收盤 OHLCV；XAUUSD 尚未設定可靠 provider 時會明確拒絕，不補造價格。所有委託與成交僅屬 Paper 環境；系統仍不提供 LIVE 下單或資金操作。
 
 ## 履歷重點
 
@@ -12,11 +12,13 @@
 | 演算法工程 | 封閉 K 線、時間截止點、多週期對齊、Market Structure、SMC/ICT、Risk Engine |
 | 可重現性 | 資料集、策略、設定、程式來源與回測執行皆有 canonical identity；分析與回測共用決定性引擎 |
 | 效能工程 | P3 增量重播以完整輸出差異測試守住語意等價；已量測約 2.9 倍整體吞吐改善，並明確保留後段效能不足的停止結論 |
-| 資料庫安全 | PostgreSQL CHECK 與 trigger 阻擋無效狀態、直接 SQL 改寫與歷史證據變更 |
+| Paper 交易 | account-scoped 委託、成交、持倉、Journal、附件與 Analytics；冪等命令、競態與 HTTP 錯誤都有明確契約 |
+| 資料庫安全 | PostgreSQL CHECK、trigger 與 transaction 阻擋無效狀態、直接 SQL 改寫與歷史證據變更 |
 | AI 安全邊界 | OpenAI 僅能驗證既有候選，不能創造方向或改寫 Entry／TP／SL；停用時仍可完整運作 |
-| 前端品質 | Next.js／TypeScript 儀表板、請求競態防護、明確錯誤狀態、單元與真實瀏覽器測試 |
+| 前端品質 | Next.js／TypeScript 響應式產品介面、server-only Paper credential、請求競態防護、單元與真實瀏覽器測試 |
+| 可營運性 | request/admission budget、structured telemetry、observation worker、bounded read model、retention lifecycle 與 Rust shadow seam |
 
-最新進度與下一階段請見 [PROJECT_STATUS.md](PROJECT_STATUS.md)；公開版驗證摘要見 [VERIFICATION.md](VERIFICATION.md)；安全邊界請見 [SECURITY.md](SECURITY.md)。最新 P3 工程驗證記錄為 899 個後端測試（含 109 個真實 PostgreSQL 測試）、69 個前端測試與 74 個真實 Chrome 案例通過；增量重播的等價性、效能與限制見 [P3 報告](experiments/r1e_p3_incremental/P3_REPORT.md)。這些數字證明的是工程規則與回歸防護，不代表策略獲利、真實成交品質或正式上線可用性。
+履歷用成果與畫面索引見 [PORTFOLIO_EVIDENCE.md](PORTFOLIO_EVIDENCE.md)；最新進度與下一階段請見 [PROJECT_STATUS.md](PROJECT_STATUS.md)；公開版驗證摘要見 [VERIFICATION.md](VERIFICATION.md)；安全邊界請見 [SECURITY.md](SECURITY.md)。目前各凍結切片的最新證據包含 2,226 個後端測試、481 個真實 PostgreSQL 案例、258 個前端 Vitest 與 129 個 production-browser 案例通過；這些數字來自各自標記的驗證階段，不會互相加總或冒充同一次執行。它們證明的是工程規則與回歸防護，不代表策略獲利、LIVE 成交品質或正式上線可用性。
 
 ## 產品範圍
 
@@ -27,10 +29,13 @@
 - 決策：規則式候選訊號、風險檢查、選用的 OpenAI 二次驗證
 - 輸出：`LONG`、`SHORT` 或 `NO_TRADE`
 - 保存：行情版本、偵測結果、候選訊號、最終訊號與驗證紀錄，供回測及統計使用
+- Paper 執行：模擬委託、部分／完整成交、持倉與平倉、Journal、附件狀態與 Analytics
+- 身分邊界：Paper HTTP 使用 server-side bearer credential 與 account scope；瀏覽器不持有後端憑證
 
 ## 不在範圍內
 
-- 券商／交易所下單、倉位管理、資金劃轉或 API 交易金鑰
+- LIVE 券商／交易所下單、資金劃轉或真實 API 交易金鑰
+- 把 Paper 委託、fixture 或 recorded evidence 描述為真實成交
 - 由 OpenAI 自行發明市場結構、Entry、TP 或 SL
 - 以測試假資料冒充正式行情或正式訊號
 - 未完成形式化、無法回測的 SMC／ICT 規則
@@ -62,7 +67,9 @@ Market Data
 | Risk Engine | 驗證 Entry Zone、單一 TP、單一 SL、風險報酬與風險上限 | 所有閾值集中設定，不散落 magic numbers |
 | OpenAI Validation | 僅能確認、拒絕、降低信心或解釋既有候選 | 不得新增結構、改方向或創造／移動價位 |
 | Signal Store | 保存輸入版本、規則版本、候選、驗證與最終結果 | 支援重播、回測、稽核及統計 |
-| API / Frontend | 提供圖表、分析覆蓋層、訊號明細與歷史統計 | 不提供下單控制項 |
+| Paper Execution | 保存模擬委託、成交、持倉、交易與生命週期證據 | 不連接 LIVE provider；金融歷史不可被管理介面任意改寫 |
+| Journal / Analytics | 從已確認 Paper 成交產生可追溯交易紀錄、附件狀態與統計 | 來源不足時回傳 NOT_READY，不補造歷史 |
+| API / Frontend | 提供圖表、分析覆蓋層、Paper 操作、Journal 與 Analytics | 後端 credential 僅存在伺服器端；技術失敗不得偽裝成 `NO_TRADE` |
 
 ## 訊號契約
 
@@ -122,11 +129,16 @@ ai-trading-platform/
 
 ## 後端執行與測試
 
-本機 Python：
+本機 Python 3.12+：先準備 Rust stable／Cargo（已驗證 1.99.0）與 Windows
+MSVC C++ build tools，建置並安裝唯一的 UTC alignment extension，再安裝後端。
+Rust 只用於建置；執行時使用 wheel。詳見 [Rust core 架構](RUST_CORE_ARCHITECTURE.md)。
 
 ```powershell
 Set-Location backend
 python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install maturin==1.15.0
+.\.venv\Scripts\python.exe -m maturin build --locked --release --manifest-path ../rust/utc_alignment/Cargo.toml --out ../native-wheels
+.\.venv\Scripts\python.exe -m pip install (Get-ChildItem ../native-wheels/*.whl).FullName
 .\.venv\Scripts\python.exe -m pip install -e ".[test]"
 .\.venv\Scripts\python.exe -m alembic upgrade head
 .\.venv\Scripts\python.exe -m pytest

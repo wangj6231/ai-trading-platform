@@ -1,5 +1,6 @@
 from decimal import Decimal
 from enum import Enum
+from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -14,6 +15,19 @@ class MTFRole(str, Enum):
     MARKET_STRUCTURE = "MARKET_STRUCTURE"
     SETUP = "SETUP"
     TRIGGER = "TRIGGER"
+    CONTEXT_ONLY = "CONTEXT_ONLY"
+
+
+# Compatibility for explicitly loaded historical configurations only. New
+# timeframe domains require an explicit role registry; never infer their role.
+LEGACY_MTF_ROLES = {
+    Timeframe.ONE_HOUR: MTFRole.MARKET_BIAS,
+    Timeframe.FIFTEEN_MINUTES: MTFRole.MARKET_STRUCTURE,
+    Timeframe.FIVE_MINUTES: MTFRole.SETUP,
+    Timeframe.THREE_MINUTES: MTFRole.TRIGGER,
+    Timeframe.ONE_MINUTE: MTFRole.TRIGGER,
+}
+PositiveBars = Annotated[int, Field(strict=True, ge=1)]
 
 
 class MTFGapPolicy(str, Enum):
@@ -53,6 +67,7 @@ class MTFReasonCode(str, Enum):
     MTF_INCOMPLETE_BUCKET = "MTF_INCOMPLETE_BUCKET"
     MTF_STATE_UNAVAILABLE = "MTF_STATE_UNAVAILABLE"
     MTF_STATE_STALE = "MTF_STATE_STALE"
+    MTF_WARMUP_INCOMPLETE = "MTF_WARMUP_INCOMPLETE"
     MTF_NOT_ALIGNED = "MTF_NOT_ALIGNED"
     MTF_VETO_CONFLICT = "MTF_VETO_CONFLICT"
     MTF_SIGNAL_TIMEFRAME_CONFLICT = "MTF_SIGNAL_TIMEFRAME_CONFLICT"
@@ -68,6 +83,9 @@ class MTFConfig(BaseModel):
 
     mtf_source_timeframe: Timeframe
     mtf_target_timeframes: tuple[Timeframe, ...]
+    mtf_role_by_timeframe: dict[Timeframe, MTFRole] = Field(default_factory=dict)
+    mtf_availability_required: tuple[Timeframe, ...] = ()
+    mtf_warmup_bars: dict[Timeframe, PositiveBars] = Field(default_factory=dict)
     mtf_gap_policy: MTFGapPolicy
     mtf_session_calendar_id: str | None
     mtf_required_timeframes: tuple[Timeframe, ...]
@@ -75,7 +93,7 @@ class MTFConfig(BaseModel):
     mtf_veto_timeframes: tuple[Timeframe, ...]
     mtf_signal_timeframe: Timeframe
     mtf_require_signal_timeframe_alignment: bool
-    mtf_state_max_age_bars: dict[Timeframe, int]
+    mtf_state_max_age_bars: dict[Timeframe, PositiveBars]
     mtf_require_price_array_gate: bool
     mtf_dealing_range_timeframe: Timeframe
     mtf_dealing_range_max_span_bars: int = Field(ge=1)
@@ -93,6 +111,26 @@ class MTFConfig(BaseModel):
             raise ValueError("mtf_required_timeframes must be unique")
         required = set(self.mtf_required_timeframes)
         targets = set(self.mtf_target_timeframes)
+        roles = self.mtf_role_by_timeframe
+        if not roles:
+            if not targets.issubset(LEGACY_MTF_ROLES):
+                raise ValueError("new timeframe domains require an explicit role map")
+            roles = {tf: role for tf, role in LEGACY_MTF_ROLES.items() if tf in targets}
+        if set(roles) != targets:
+            raise ValueError("role map must cover every target exactly")
+        available = set(self.mtf_availability_required)
+        if len(available) != len(self.mtf_availability_required) or not available.issubset(targets):
+            raise ValueError("availability_required must contain unique target timeframes")
+        if self.mtf_warmup_bars and set(self.mtf_warmup_bars) != targets:
+            raise ValueError("warmup map must cover every target exactly")
+        context = {tf for tf, role in roles.items() if role is MTFRole.CONTEXT_ONLY}
+        authority = required | available | set(self.mtf_veto_timeframes) | {self.mtf_signal_timeframe}
+        if self.mtf_require_price_array_gate:
+            authority.add(self.mtf_dealing_range_timeframe)
+        if context & authority:
+            raise ValueError("CONTEXT_ONLY cannot have required/veto/availability/signal/price authority")
+        object.__setattr__(self, "mtf_role_by_timeframe", freeze_mapping(roles))
+        object.__setattr__(self, "mtf_warmup_bars", freeze_mapping(self.mtf_warmup_bars))
         if not required.issubset(targets):
             raise ValueError("required timeframes must be configured targets")
         if not set(self.mtf_veto_timeframes).issubset(required):

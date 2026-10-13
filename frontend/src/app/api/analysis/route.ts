@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
-import { proxyJsonPost } from "@/lib/backend-proxy";
+import { proxyStrategyRequest } from "@/lib/product-request";
 
 export async function POST(request: NextRequest) {
-  return proxyJsonPost(request, "/api/v1/analysis");
+  return proxyStrategyRequest(request, "/api/v1/analysis");
 }

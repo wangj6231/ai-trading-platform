@@ -1,6 +1,7 @@
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { PriceChart } from "@/components/price-chart";
+import { cleanEvidenceView } from "@/lib/chart-evidence";
 import "@/app/globals.css";
 import type { Candle, ZoneOverlay } from "@/types/trading";
 import { pan, projection, resizeCount } from "./projection-adapter";
@@ -54,7 +55,7 @@ function zone(): ZoneOverlay {
 }
 
 function draw() {
-  flushSync(() => root.render(<PriceChart candles={candles} signal={null}
+  flushSync(() => root.render(<PriceChart view={cleanEvidenceView()} candles={candles} signal={null}
     analysis={{ supports: [], resistances: [], swings: [], structures: [], macd: [], zones: [zone()] }} />));
 }
 

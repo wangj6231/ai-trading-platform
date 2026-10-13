@@ -1,110 +1,102 @@
 # Engineering verification summary
 
-Baseline verification: 2026-09-06 (Asia/Taipei)
+Updated: 2026-10-13 (Asia/Taipei)
 
-GitHub publication preflight: 2026-09-07 (Asia/Taipei)
+## Interpretation
 
-P3 incremental replay verification: 2026-09-07 (Asia/Taipei)
+Verification in this repository proves software contracts and regression
+guards for a research/Paper system. It does not prove strategy profitability,
+LIVE execution quality, production availability, disaster recovery, or
+commercial capacity.
 
-## Result
+Counts below belong to named, independently frozen milestones. A later slice
+may intentionally rerun only the affected domain. Results are therefore shown
+with their scope and are never added together.
 
-The frozen V4.2 engineering baseline completed its scoped regression and
-integrity gates without an outstanding critical, high, or medium engineering
-finding. The result supports the implemented software invariants; it does not
-establish trading profitability, broker execution accuracy, production
-readiness, or financial suitability.
+## Latest milestone evidence
 
-| Gate | Result |
-| --- | ---: |
-| Complete backend suite with PostgreSQL enabled | 867 passed, 0 failed, 0 skipped |
-| Dedicated real PostgreSQL integration | 109 passed, 0 failed, 0 skipped |
-| Backend line coverage | 90.19% |
-| Frontend unit/component tests | 69 passed |
-| Frontend statements/lines coverage | 82.61% |
-| Frontend branch coverage | 75.73% |
-| Frontend function coverage | 78.26% |
-| Real Chrome browser cases | 74 passed |
-| Ruff, mypy, TypeScript, ESLint, production build, compileall | passed |
-| Alembic base -> head -> base -> head on PostgreSQL 16 | passed |
+| Milestone | Accepted result | Boundary |
+| --- | --- | --- |
+| Object binary O2 / current backend collection | 2,226 distinct backend tests passed in disjoint complete partitions; 481 PostgreSQL 16.11 cases; 0 failed, errored, or skipped | Coverage, frontend, and Rust were not rerun in O2 |
+| Financial retention lifecycle F5-A | 2,071 backend tests passed; 435 PostgreSQL cases; 91.96% combined line coverage; Ruff/mypy/compileall passed | No purge, scheduler, archive, cloud object store, DR, or capacity claim |
+| Paper execution E2E | 1,663 backend tests passed, including 251 PostgreSQL cases; 258 Vitest tests; 129 production-browser cases; typecheck, ESLint, and production build passed | Paper only; no LIVE broker or production-readiness claim |
+| Dashboard bounded composition F4.1 | 2,005 distinct backend nodes passed; 395 PostgreSQL cases; 91.89% combined line coverage | Normal bounded composition, not all-path O(1) work or a capacity pass |
+| Rust UTC-alignment bootstrap | 8 Rust unit tests, fmt, and clippy passed; Windows wheel runtime smoke passed; containing backend checkpoint 1,968 tests and 92.07% coverage | Python remains authoritative; shadow was slower in the recorded benchmark |
+
+Detailed evidence and counting rules:
+
+- [PRODUCT_FOUNDATION_F5_B_REPORT.md](PRODUCT_FOUNDATION_F5_B_REPORT.md)
+- [PRODUCT_FOUNDATION_F5_REPORT.md](PRODUCT_FOUNDATION_F5_REPORT.md)
+- [PAPER_E2E_V1_REPORT.md](PAPER_E2E_V1_REPORT.md)
+- [PRODUCT_FOUNDATION_F4_1_REPORT.md](PRODUCT_FOUNDATION_F4_1_REPORT.md)
+- [RUST_CORE_BOOTSTRAP_V1_REPORT.md](RUST_CORE_BOOTSTRAP_V1_REPORT.md)
+
+## 2026-10-13 publication preflight
+
+Fresh checks against the staged publication candidate passed:
+
+| Gate | Fresh result |
+| --- | --- |
+| Backend static checks | Ruff passed; mypy passed for 166 source files; compileall passed |
+| Focused backend security/product regression | 299 passed; deployment security, account scope, Paper HTTP, async jobs, observation worker, Journal/Analytics, retention, user binary, and automatic snapshot O2 |
+| Frontend unit/component coverage | 268 passed; statements/lines 90.17%, branches 81.49%, functions 76.50% |
+| Frontend browser matrix | 127 passed: 76 chart/MTF, 8 product, 8 evidence, 11 density, 20 Paper fixture/reconciliation, and 4 authenticated HTTP |
+| TypeScript / ESLint / production build | passed / passed / passed |
+| Candidate secret scan | no high-confidence credential prefix, private-key block, credentialed database URI, or public-browser secret variable found |
+| Staged diff check | passed |
+
+The focused backend run is not substituted for the complete PostgreSQL suite.
+Rust was not available on this Windows host. The protected pull request must
+therefore pass both required GitHub Actions jobs; the backend job builds/tests
+Rust 1.99.0 and runs the complete pytest collection against PostgreSQL 16 with
+the unchanged 90% coverage gate.
 
 ## Security and integrity boundaries exercised
 
-- Production rejects missing, short, and known-placeholder PostgreSQL
-  credentials before startup.
-- Default Compose keeps PostgreSQL inside the application network; optional
-  development access binds to loopback only.
-- Sensitive settings use secret-aware types and are excluded from strategy and
-  backtest identities.
-- PostgreSQL constraints reject impossible signal rows.
-- PostgreSQL triggers reject ORM, SQLAlchemy Core, bulk, and raw SQL rewrites of
-  protected historical and terminal signal evidence.
-- Snapshot, strategy/configuration/source identity, execution evidence, and
-  optional AI-validation provenance remain separately versioned and immutable.
-- Closed-candle, cutoff, delayed-reveal, multi-timeframe, market-data trust, and
-  look-ahead regressions are included in the engineering gates.
+- Missing, weak, or known-placeholder production credentials fail closed.
+- Browser-facing code does not receive the backend Paper bearer credential.
+- Account scope is enforced across Paper commands, reads, async jobs, Journal,
+  attachments, and completion paths.
+- PostgreSQL constraints and triggers reject invalid state transitions and
+  mutation/deletion of protected financial, lifecycle, attachment, completion,
+  and strategy evidence.
+- Idempotent replay, request races, concurrent completion, transaction rollback,
+  and direct-SQL attacks have explicit regression coverage.
+- Closed-candle, cutoff, delayed-reveal, multi-timeframe, source-provenance, and
+  look-ahead rules remain part of the deterministic strategy gates.
+- Observation work uses bounded admission, durable checkpointing, and explicit
+  failure/backpressure rather than fabricating readiness.
+- Binary reads are bounded and content-verified. The current local seam is not
+  certification of a deployed object store, encryption service, renderer, or
+  cleanup authority.
 
 ## Publication preflight
 
-Before the initial GitHub publication, the repository candidate set was reduced
-to source, tests, documentation, configuration templates, and curated research
-reports. Third-party PDFs, raw market data, raw provider/model responses,
-database files, credentials, local environments, caches, coverage output, and
-profiler artifacts are excluded. A no-network secret scan of the actual
-candidate set found only documented development/CI placeholders, test fixtures,
-and content hashes; no real credential was identified.
+Before a public push, the candidate set is limited to source, tests,
+documentation, configuration templates, curated reports, and labelled UI
+evidence. The following remain local:
 
-The publication session also passed all 23 focused deployment-security tests,
-confirmed that rendered default Compose has no PostgreSQL host port, and passed
-the real-PostgreSQL regression that attempts a direct SQL rewrite of a terminal
-signal's `take_profit`. Both temporary audit listeners were confirmed closed
-after testing.
+- `.env` files, credentials, private keys, and database connection secrets;
+- database files, dumps, retained object bytes, and user uploads;
+- raw provider responses and raw market-history payloads;
+- third-party PDFs, local environments, dependency/build caches, profiler data,
+  raw coverage output, and machine-specific logs.
 
-The first GitHub Actions run completed successfully on the publication commit:
-
-| GitHub publication gate | Result |
-| --- | ---: |
-| Backend with PostgreSQL 16 service | 899 passed |
-| Backend line coverage | 90.90% |
-| Frontend unit/component tests | 69 passed |
-| Frontend statements/lines coverage | 83.76% |
-| Frontend branch coverage | 77.37% |
-| Frontend function coverage | 89.13% |
-| Chromium browser cases | 74 passed |
-| Frontend production build | passed |
-
-## P3 incremental replay verification
-
-The P3 assessment preserves the frozen strategy/configuration semantics and
-compares complete typed outputs, rather than accepting matching final trade
-directions alone.
-
-| P3 gate | Result |
-| --- | ---: |
-| R1 reference/P3 cutoff comparisons | 1,440 equal |
-| Transition-fixture prefix comparisons | 40 equal |
-| Instrumented configuration-variant comparisons | 520 equal |
-| Fresh targeted differential/lifecycle pytest | 26 passed |
-| Q1 measurement reached | 7,591 / 129,600 evaluations |
-| Measurement stop | clean at predeclared 1,750-second soft cap |
-| Observed aggregate throughput change | 1.493 to 4.338 evaluations/second (about 2.9x) |
-| Protected authored/prior artifact hashes | 423 unchanged |
-| Reviewed classification | `PERFORMANCE_STILL_INSUFFICIENT` |
-
-The throughput ratio compares runs that stopped at different prefixes and is
-not a validated full-Q1 ETA. Later-window cost continued to grow, so P3 remains
-an experimental, non-default path. No partial trading output, profitability,
-or production-readiness claim was derived from the measurement. Detailed
-method, results, and limits are recorded in the
-[P3 engineering report](experiments/r1e_p3_incremental/P3_REPORT.md).
+The publication branch is scanned for sensitive filenames and credential
+patterns before push. GitHub Secret Scanning and Push Protection are enabled,
+and protected `main` requires the backend/PostgreSQL and frontend/browser checks
+through a pull request.
 
 ## Reproduce
 
-On Windows PowerShell, with an isolated PostgreSQL test URL set for integration
-tests:
+GitHub Actions is the authoritative cross-platform publication gate. It builds
+the pinned Rust extension, runs Rust fmt/clippy/tests, then executes backend
+Ruff, mypy, and the complete pytest suite against PostgreSQL 16 with the 90%
+coverage threshold. The frontend job runs TypeScript, ESLint, Vitest coverage,
+Chromium browser tests, and a production Next.js build.
+
+For a local Windows run, use an isolated test PostgreSQL URL and then run:
 
 ```powershell
 .\scripts\quality-gates.ps1
 ```
-
-GitHub Actions also runs backend checks against a PostgreSQL 16 service and runs
-frontend typecheck, lint, coverage, real-browser tests, and a production build.

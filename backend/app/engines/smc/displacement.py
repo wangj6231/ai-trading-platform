@@ -1,3 +1,4 @@
+from collections import defaultdict
 from collections.abc import Sequence
 from datetime import timedelta
 from decimal import Context, Decimal, localcontext
@@ -220,6 +221,16 @@ def analyze_displacement(
     interval = timeframe_duration(timeframe)
     cutoff = candles[-1].timestamp + interval if candles else None
     timestamp_to_index = {candle.timestamp: index for index, candle in enumerate(candles)}
+    fvg_by_last_source: dict[tuple[GapDirection, int], list[GapZone]] = defaultdict(list)
+    source_free_fvgs: list[GapZone] = []
+    for zone in fvg_zones:
+        if zone.type is GapZoneType.FVG:
+            indices = [timestamp_to_index[item] for item in zone.source_candle_timestamps]
+            if indices:
+                fvg_by_last_source[zone.direction, max(indices)].append(zone)
+            else:
+                # Preserve the original all([]) matching behavior.
+                source_free_fvgs.append(zone)
     true_ranges = _true_ranges(candles)
     legs: list[DisplacementLeg] = []
     evaluations: list[DisplacementEvaluation] = []
@@ -307,8 +318,11 @@ def analyze_displacement(
                 direction,
                 atr_baseline,
             )
+            gap_direction = GapDirection.BULLISH if direction is DisplacementDirection.BULLISH else GapDirection.BEARISH
+            candidates = source_free_fvgs + [zone for index in range(start_index-2, end_index+1)
+                for zone in fvg_by_last_source[gap_direction, index]]
             latest_fvgs = _matching_fvgs(
-                fvg_zones,
+                candidates,
                 timestamp_to_index,
                 direction,
                 start_index,
