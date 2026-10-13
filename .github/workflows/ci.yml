@@ -25,14 +25,14 @@ jobs:
           POSTGRES_USER: ai_trading_test
           POSTGRES_PASSWORD: local-ci-test-only
         ports:
-          - 5432:5432
+          - 55432:5432
         options: >-
           --health-cmd "pg_isready -U ai_trading_test -d ai_trading_test"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
     env:
-      TEST_POSTGRES_URL: postgresql+psycopg://ai_trading_test:local-ci-test-only@127.0.0.1:5432/ai_trading_test
+      TEST_POSTGRES_URL: postgresql+psycopg://ai_trading_test:local-ci-test-only@127.0.0.1:55432/ai_trading_test
     defaults:
       run:
         working-directory: backend

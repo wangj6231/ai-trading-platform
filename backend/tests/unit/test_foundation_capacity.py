@@ -14,6 +14,14 @@ def test_harness_rejects_production_and_unknown_targets(url):
     assert url not in str(error.value)
 
 
+def test_harness_accepts_ci_isolated_target():
+    url = guard_test_cluster(
+        'postgresql+psycopg://ai_trading_test:local-ci-test-only@127.0.0.1:55432/ai_trading_test')
+    assert url.host == '127.0.0.1'
+    assert url.port == 55432
+    assert url.database == 'ai_trading_test'
+
+
 def test_missing_percentiles_unknown_not_zero():
     result = percentiles([.1])
     assert result['p95_seconds'] is None and result['p99_seconds'] is None
