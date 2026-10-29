@@ -45,13 +45,21 @@ replaced by `import.meta.dirname`. Coverage include/exclude behavior and all
 thresholds remain enforced.
 
 The first development-dependency install exposed an npm 10.7.0 Arborist
-`edgesOut` internal error under the machine's Node 20.15.1. The final lockfile
-was produced with the workspace's Node 24.22.1 and npm 11.6.2, matching the
-repository CI's Node 24 generation. The failed attempt did not require a
-forced install or relaxed peer-dependency policy.
+`edgesOut` internal error under the machine's Node 20.15.1 because it reused a
+mixed incremental dependency tree. A later npm 11 lockfile passed locally but
+failed the first PR CI install because the repository workflow actually uses
+Node 20.20.2/npm 10 and required additional optional native dependency
+metadata. The final lockfile was therefore rebuilt from a clean temporary
+directory with npm 10, then verified with `npm ci` and the complete frontend
+gate in an ASCII-path candidate mirror matching the CI path shape. The local
+worktree's non-ASCII parent path still triggers the npm 10 Arborist `edgesOut`
+bug even without `node_modules`; this is a local package-manager path defect,
+not a relaxed gate. The failed attempts did not require a forced install or
+relaxed peer-dependency policy.
 
 ## Verification
 
+- Clean npm 10 `npm ci`: PASS.
 - `npm audit --audit-level=low`: 0 vulnerabilities.
 - TypeScript `tsc --noEmit`: PASS.
 - ESLint: PASS.
