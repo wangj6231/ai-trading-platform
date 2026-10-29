@@ -2,11 +2,11 @@
 
 這是一個以可重現、可稽核與安全失敗為核心的 AI 輔助技術分析與 Paper 交易平台。它提供多週期分析儀表板、帳戶隔離的模擬委託／成交／持倉、交易 Journal 與統計，不連接 LIVE 券商，也不使用真實交易金鑰。
 
-> 目前狀態：`FRONTEND-PRODUCT-V1` release candidate 已整理於 [PR #17](https://github.com/wangj6231/ai-trading-platform/pull/17)，尚未合併至受保護的 `main`。決定性分析引擎、非同步評估、PostgreSQL 不可變稽核軌跡、回測框架、Next.js 分析介面，以及 authenticated Paper execution／Journal／Analytics 流程已完成多階段驗證。BTCUSDT／ETHUSDT 使用 Binance 公開 Spot Kline API 的已收盤 OHLCV；XAUUSD 尚未設定可靠 provider 時會明確拒絕，不補造價格。所有委託與成交僅屬 Paper 環境；系統仍不提供 LIVE 下單或資金操作。
+> 目前狀態：`FRONTEND-PRODUCT-V1` release candidate 已整理於 [PR #17](https://github.com/wangj6231/ai-trading-platform/pull/17)，尚未合併至受保護的 `main`。決定性分析引擎、非同步評估、PostgreSQL 不可變稽核軌跡、回測框架、Next.js 分析介面，以及 authenticated Paper execution／Journal／Analytics 流程已完成多階段驗證。2026-10-29 的 Journal、archive、Supervisor 與 Rust 工作仍有 `PARTIAL_PASS`、等待接受或 regression，未被包裝成已完成 release；詳見 [作品集進度報告](PORTFOLIO_PROGRESS_REPORT_20261029.md)。所有委託與成交僅屬 Paper 環境；系統仍不提供 LIVE 下單或資金操作。
 
 ## 目前公開驗證狀態
 
-| 項目 | 2026-10-14 驗證結果 |
+| 項目 | 公開／本機驗證結果 |
 | --- | --- |
 | Release candidate | [PR #17](https://github.com/wangj6231/ai-trading-platform/pull/17) 已推送、可合併狀態為 clean；仍保持 open，未繞過 `main` ruleset |
 | 後端與 PostgreSQL | GitHub Actions 全量測試 2,227 項通過，4 個既有 warning，coverage 92.03% |
@@ -14,6 +14,8 @@
 | 延伸瀏覽器驗證 | 本機共 127 項 production-browser 測試通過，涵蓋圖表／MTF、Product、Evidence、Density、Paper reconciliation 與 authenticated HTTP |
 | 安全狀態 | GitHub Secret Scanning 0 個 open alert；`Protect main` ruleset 啟用；未發布交易金鑰、資料庫、原始行情、第三方 PDF 或實驗原始輸出 |
 | 未完成界線 | 尚未證明策略獲利、真實市場延遲／成本、LIVE 券商安全或 production readiness；O3／雲端保存、災難復原與容量工作仍待完成 |
+
+2026-10-29 本機進度稽核另通過 Ruff、mypy、compileall、2,112 項 backend unit、301 項 frontend Vitest，以及 8 個 Rust crate 的 224 項 locked/offline case；這些是 WIP 工作樹的分項證據，不等於 PR exact-head CI。詳細問題、解法、Rust 遷移理由、已完成與未完成清單見 [PORTFOLIO_PROGRESS_REPORT_20261029.md](PORTFOLIO_PROGRESS_REPORT_20261029.md)。
 
 最新 required-check 證據見 [Quality gates run 38435925057](https://github.com/wangj6231/ai-trading-platform/actions/runs/38435925057)，持續追蹤項目見 [Issue #6](https://github.com/wangj6231/ai-trading-platform/issues/6)。
 

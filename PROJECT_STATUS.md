@@ -1,6 +1,11 @@
 # Project status
 
-Last updated: 2026-10-14 (Asia/Taipei)
+Last updated: 2026-10-29 (Asia/Taipei)
+
+For the portfolio-facing explanation of current discoveries, fixes, Rust
+migration rationale, fresh verification, and public/private publication
+boundary, see
+[PORTFOLIO_PROGRESS_REPORT_20261029.md](PORTFOLIO_PROGRESS_REPORT_20261029.md).
 
 ## Current milestone
 
@@ -86,6 +91,22 @@ stop conditions live in the phase reports, especially
 - Next.js is updated to the non-major security release 16.4.0. Remaining npm
   audit findings are confined to development/test tooling and require breaking
   dependency changes; they stay explicitly open for a dedicated upgrade PR.
+
+## 2026-10-29 worktree audit
+
+The current development worktree contains Journal V2, market-archive,
+private-storage, supervisor, and Rust compatibility work. It is intentionally
+not being published wholesale. Journal V2 and O3 remain `PARTIAL_PASS`, the
+archive F5-C proposal still needs owner acceptance, supervisor S4 is not ready,
+and Rust remains a shadow/parity implementation path under Python and
+PostgreSQL authority.
+
+Fresh local verification passed Ruff, mypy (192 source files), compileall,
+2,112 backend unit tests, 301 frontend Vitest tests, and 224 locked/offline Rust
+tests and compile-fail cases across eight crates. This run did not include the
+complete PostgreSQL partition or public PR exact-head CI. The frontend build
+completed, but current Next/npm/Dependabot security findings remain open and
+must be handled in a dedicated upgrade branch with full regression evidence.
 
 ## Open boundaries and next stages
 
