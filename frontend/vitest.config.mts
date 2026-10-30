@@ -8,7 +8,6 @@ export default defineConfig({
     setupFiles: ["./tests/setup.ts"],
     coverage: {
       provider: "v8",
-      all: true,
       include: ["src/**/*.{ts,tsx}"],
       reporter: ["text", "html"],
       thresholds: {
@@ -20,6 +19,6 @@ export default defineConfig({
     },
   },
   resolve: {
-    alias: { "@": path.resolve(__dirname, "./src") },
+    alias: { "@": path.resolve(import.meta.dirname, "./src") },
   },
 });
