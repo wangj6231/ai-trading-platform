@@ -31,7 +31,7 @@ Owner-approved product decisions have been removed from this list. TF-MIGRATE-01
 
 ## Decision form requirements
 
-Owner 的回答只需填寫 [MTF_OWNER_DECISION_FORM.md](<C:\Users\milo9\Desktop\交易\ai-trading-platform\MTF_OWNER_DECISION_FORM.md>)。
+Owner 的回答只需填寫 [MTF_OWNER_DECISION_FORM.md](MTF_OWNER_DECISION_FORM.md)。
 完成後才可建立 canonical StrategyConfig、更新 StrategyIdentity，並開始 TF-MIGRATE-01B。
 
 在此之前：
