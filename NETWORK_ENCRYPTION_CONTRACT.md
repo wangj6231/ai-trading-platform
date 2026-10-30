@@ -1,0 +1,36 @@
+# Network / Encryption Contract
+
+[PRODUCT_FOUNDATION_V1](PRODUCT_FOUNDATION_V1.md) 已批准singlejurisdiction、managedidentity、
+TLS與separatelyencryptedbackup/keycustody要求；exactregion/部署仍未選，以下controls未驗證。
+Off-hostbackup/objectrecovery不是跨legaljurisdictionreplication授權。
+
+## 現况而非部署宣稱
+
+Compose frontend/backendpublishhostports，postgresdefault不publish；devoverlay是
+loopbackPG。沒有TLSingress、防火牆、verifiedDBsslmode、privateobjectstorage或managed
+at-restkey的部署證據。ProductionSettings驗DBcredential，不保證TLS或networkisolation。
+privatePaperproxy只准loopbackHTTP；這是目前localproduct模式，不是HTTPSproduction配置。
+
+## 未來publicdeployment gate
+
+Externalbrowser→ingress只准HTTPS/TLS，HTTPredirect/HSTS在域名/證書policy核准後配置。
+backend不直接公開，health/admin/metrics不暴露互聯網；ingress先限制body/header/
+connections/timeouts與requests。可信forwardedIP只有明確trustedproxychain可採信。
+internalserviceTLS依信任網段與部署threatmodel決定，跨不可信network必TLS。
+DB走privateendpoint + certificateverifiedTLS（如sslmode=verify-full），驗hostname/CA，
+拒downgrade；postgresrole允許來源最小化，不讓migrationowner進runtime。
+egress僅批准provider/SecretManager/KMS/objectstorage；無browser傳任意URLfetch。
+DNS/redirect/metadataendpointSSRF防護與workerprovider設定屬servercontrol。
+RESTtransport要求參考 [OWASP REST Security](https://cheatsheetseries.owasp.org/cheatsheets/REST_Security_Cheat_Sheet.html)。
+
+PGvolume、備份、WALarchive、objectstorage、logstorage須平台encryption-at-rest。
+volumeencryption不替代DBscope；objectbucketprivate，signedURL短期/單物件/tenant授權，
+accesslog不含完整tokenizedURL。rawbrokersecret需要獨立AEADenvelope，不只volume加密。
+custody/rotation/restorekey見 [SECRET_KEY_MANAGEMENT_CONTRACT.md](SECRET_KEY_MANAGEMENT_CONTRACT.md)。
+
+## Verification
+
+從外部測onlyapprovedports、invalidcert/host/TLSdowngrade拒絕、DB無publicroute、
+cloudmetadataegress拒絕、ingress限制pre-buffering有效、proxyheader不可forgeprincipal，
+app/DB/backup/runtime role權限分离。這些目前未執行，不能列為VERIFIED。
+不在本階段重設privateproxy為public或添加自製cryptography。

@@ -1,7 +1,10 @@
+from bisect import bisect_left, bisect_right
+from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from decimal import Decimal
+from heapq import heappop, heappush
 
 from app.market_data.timeframes import timeframe_duration
 from app.schemas.candle import Candle
@@ -63,6 +66,7 @@ class _PoolState:
     swept_at: datetime | None = None
     interactions: list[LiquidityInteraction] = field(default_factory=list)
     history: list[LiquidityPoolHistoryEntry] = field(default_factory=list)
+    interaction_reach: Decimal | None = field(default=None, compare=False)
 
 
 def _validate_inputs(
@@ -201,6 +205,34 @@ def _membership(
     return None
 
 
+def _matching_cluster_entry(entries: Sequence[tuple[Decimal, int, _ClusterState]],
+    swing: ConfirmedSwing, atr: Decimal | None, config: LiquidityConfig,
+) -> tuple[Decimal, int, _ClusterState] | None:
+    """Find the match interval using the ORIGINAL monotone Decimal predicate.
+
+    No multiplication/rounded-price approximation of the division thresholds.
+    Distance decreases towards swing.price on the left and increases on the
+    right. Among matches, original cluster creation order remains authoritative.
+    """
+    split = bisect_left(entries, swing.price, key=lambda item: item[0])
+    low, high = 0, split
+    while low < high:
+        middle = (low + high) // 2
+        if _membership(entries[middle][2], swing, atr, config) is not None:
+            high = middle
+        else:
+            low = middle + 1
+    first = low
+    low, high = split, len(entries)
+    while low < high:
+        middle = (low + high) // 2
+        if _membership(entries[middle][2], swing, atr, config) is not None:
+            low = middle + 1
+        else:
+            high = middle
+    return min(entries[first:low], key=lambda item: item[1], default=None)
+
+
 def _update_cluster_pool(
     cluster: _ClusterState,
     config: LiquidityConfig,
@@ -248,6 +280,7 @@ def _update_cluster_pool(
         pool.formation = formation
         pool.lower_bound = min(prices) - padding
         pool.upper_bound = max(prices) + padding
+        pool.interaction_reach = None
         pool.updated_at = latest.confirmed_at
         pool.confirmation = _confirmation_for(formation)
         pool.source_structure = [member.swing_id for member in cluster.members]
@@ -366,6 +399,75 @@ def _process_interaction(
     return None
 
 
+def _interaction_reach(pool: _PoolState, config: LiquidityConfig) -> Decimal:
+    """Conservative reach using the ORIGINAL rounded Decimal thresholds.
+
+    A valid candle's close lies between its low and high. Below all buy-side
+    thresholds (above all sell-side thresholds), none of taken/sweep/touch can
+    hold. Bounds alone would be unsafe at low Decimal precision.
+    """
+    break_buffer = Decimal(config.liquidity_taken_buffer_ticks) * config.tick_size
+    penetration = Decimal(config.liquidity_sweep_min_penetration_ticks) * config.tick_size
+    if pool.direction is LiquidityDirection.BUY_SIDE:
+        return min(pool.lower_bound, pool.upper_bound + break_buffer, pool.upper_bound + penetration)
+    return max(pool.upper_bound, pool.lower_bound - break_buffer, pool.lower_bound - penetration)
+
+
+class _PoolReachIndex:
+    """Schedule the original predicates by conservative price and exact age."""
+
+    def __init__(self, config: LiquidityConfig) -> None:
+        self._config = config
+        self._prices: dict[LiquidityDirection, list[tuple[Decimal, int, _PoolState]]] = {
+            direction: [] for direction in LiquidityDirection}
+        self._current: dict[int, tuple[Decimal, int, _PoolState]] = {}
+        self._ages: list[tuple[int, int, _PoolState]] = []
+
+    def contains(self, pool: _PoolState) -> bool:
+        return id(pool) in self._current
+
+    def update(self, pool: _PoolState, position: int | None = None) -> None:
+        old = self._current.get(id(pool))
+        if old is not None:
+            if pool.interaction_reach is not None:
+                return
+            position = old[1]
+            self.discard(pool)
+        assert position is not None
+        reach = _interaction_reach(pool, self._config)
+        pool.interaction_reach = reach
+        entry = (reach, position, pool)
+        prices = self._prices[pool.direction]
+        at = bisect_right(prices, entry[:2], key=lambda item: item[:2])
+        prices.insert(at, entry)
+        self._current[id(pool)] = entry
+        if old is None:
+            heappush(self._ages, (pool.created_bar_index+self._config.liquidity_pool_max_age_bars+1,
+                position, pool))
+
+    def discard(self, pool: _PoolState) -> None:
+        old = self._current.pop(id(pool))
+        prices = self._prices[pool.direction]
+        at = bisect_left(prices, old[:2], key=lambda item: item[:2])
+        prices.pop(at)
+
+    def selected(self, candle: Candle, bar_index: int) -> list[tuple[_PoolState, bool]]:
+        buy = self._prices[LiquidityDirection.BUY_SIDE]
+        sell = self._prices[LiquidityDirection.SELL_SIDE]
+        buy_end = bisect_right(buy, candle.high, key=lambda item: item[0])
+        sell_start = bisect_left(sell, candle.low, key=lambda item: item[0])
+        chosen = {id(entry[2]): (entry, True) for entry in (*buy[:buy_end], *sell[sell_start:])}
+        while self._ages and self._ages[0][0] <= bar_index:
+            _, _, pool = heappop(self._ages)
+            entry = self._current.get(id(pool))
+            if entry is not None and id(pool) not in chosen:
+                chosen[id(pool)] = (entry, False)
+        # The original active list is in archive creation order, even when
+        # prices tie or both directions interact on the same candle.
+        return [(entry[2], reachable) for entry, reachable in
+            sorted(chosen.values(), key=lambda item: item[0][1])]
+
+
 def _to_schema(pool: _PoolState) -> LiquidityPool:
     return LiquidityPool(
         pool_id=pool.pool_id,
@@ -424,10 +526,16 @@ def analyze_liquidity(
     cutoff = candles[-1].timestamp + interval
     usable_swings = [swing for swing in confirmed_swings if swing.confirmed_at <= cutoff]
     pools: list[_PoolState] = []
+    pools_by_identity: dict[str, list[_PoolState]] = defaultdict(list)
+    active_pools = _PoolReachIndex(config)
     clusters: dict[LiquidityDirection, list[_ClusterState]] = {
         LiquidityDirection.BUY_SIDE: [],
         LiquidityDirection.SELL_SIDE: [],
     }
+    cluster_index: dict[LiquidityDirection, list[tuple[Decimal, int, _ClusterState]]] = {
+        direction: [] for direction in LiquidityDirection
+    }
+    cluster_pool_keys: dict[int, tuple[LiquidityDirection, Decimal, int]] = {}
     interactions: list[LiquidityInteraction] = []
     dual_sweeps: list[DualSweepGroup] = []
     swing_index = 0
@@ -437,33 +545,39 @@ def analyze_liquidity(
         if confirmed_bar_index is None:
             raise LiquidityInputError("swing confirmed_at must align with a candle close")
         if config.liquidity_include_single_swing_pools:
-            pools.append(_new_single_pool(swing, config, confirmed_bar_index))
+            single_pool = _new_single_pool(swing, config, confirmed_bar_index)
+            pools.append(single_pool)
+            pools_by_identity[single_pool.pool_id].append(single_pool)
+            active_pools.update(single_pool, len(pools)-1)
 
         direction = _side_for(swing)
         atr = atr_by_confirmation.get(swing.confirmed_at)
-        matching_cluster: _ClusterState | None = None
-        classification: LiquidityFormation | None = None
-        for cluster in clusters[direction]:
-            if cluster.pool is not None and cluster.pool.state in TERMINAL_POOL_STATES:
-                continue
-            candidate_classification = _membership(cluster, swing, atr, config)
-            if candidate_classification is not None:
-                matching_cluster = cluster
-                classification = candidate_classification
-                break
-
-        if matching_cluster is None:
-            clusters[direction].append(
-                _ClusterState(direction=direction, anchor_price=swing.price, members=[swing])
-            )
+        entries = cluster_index[direction]
+        matching = _matching_cluster_entry(entries, swing, atr, config)
+        if matching is None:
+            ordinal = len(clusters[direction])
+            cluster = _ClusterState(direction=direction, anchor_price=swing.price, members=[swing])
+            clusters[direction].append(cluster)
+            position = bisect_right(entries, (swing.price, ordinal), key=lambda item: item[:2])
+            entries.insert(position, (swing.price, ordinal, cluster))
             return
-
+        anchor, ordinal, matching_cluster = matching
+        classification = _membership(matching_cluster, swing, atr, config)
+        assert classification is not None
         matching_cluster.members.append(swing)
         if classification is LiquidityFormation.RELATIVE_EQUAL:
             matching_cluster.contains_relative_member = True
         pool = _update_cluster_pool(matching_cluster, config, confirmed_bar_index)
-        if pool is not None and pool not in pools:
+        # Dataclass equality requires the immutable pool_id to match first.
+        # Keep the original equality/identity behavior inside collision buckets.
+        if pool is not None and pool not in pools_by_identity[pool.pool_id]:
             pools.append(pool)
+            pools_by_identity[pool.pool_id].append(pool)
+            active_pools.update(pool, len(pools)-1)
+            cluster_pool_keys[id(pool)] = (direction, anchor, ordinal)
+        elif pool is not None and active_pools.contains(pool):
+            # Membership updates can widen the existing cluster's bounds.
+            active_pools.update(pool)
 
     for bar_index, candle in enumerate(candles):
         while swing_index < len(usable_swings) and usable_swings[swing_index].confirmed_at <= candle.timestamp:
@@ -472,8 +586,8 @@ def analyze_liquidity(
 
         confirmed_at = candle.timestamp + interval
         bar_events: list[LiquidityInteraction] = []
-        for pool in pools:
-            event = _process_interaction(pool, candle, confirmed_at, config)
+        for pool, reachable in active_pools.selected(candle, bar_index):
+            event = _process_interaction(pool, candle, confirmed_at, config) if reachable else None
             if event is not None:
                 interactions.append(event)
                 bar_events.append(event)
@@ -489,6 +603,14 @@ def analyze_liquidity(
                     LiquidityPoolHistoryEventType.EXPIRED,
                     confirmed_at,
                 )
+            if pool.state in TERMINAL_POOL_STATES:
+                active_pools.discard(pool)
+                key = cluster_pool_keys.pop(id(pool), None)
+                if key is not None:
+                    direction, anchor, ordinal = key
+                    entries = cluster_index[direction]
+                    position = bisect_left(entries, (anchor, ordinal), key=lambda item: item[:2])
+                    entries.pop(position)
 
         buy_sweeps = [
             event.event_id

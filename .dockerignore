@@ -8,3 +8,6 @@
 backend/tests
 frontend/tests
 tmp
+.cache
+experiments
+rust/**/target

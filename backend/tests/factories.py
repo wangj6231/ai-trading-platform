@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
 from decimal import Decimal
+from pathlib import Path
 
 from app.core.strategy_config import load_strategy_config
 from app.core.strategy_identity import build_strategy_identity
@@ -23,7 +24,9 @@ from app.schemas.strategy import DeterministicSignalCandidate, StrategyEvaluatio
 from app.schemas.types import MarketSymbol, Timeframe
 
 
-TEST_STRATEGY_CONFIG = load_strategy_config()
+# Sealed 1m golden sequences remain isolated regression fixtures, not the
+# active production manifest. The migrated 15m path has its own integration tests.
+TEST_STRATEGY_CONFIG = load_strategy_config(Path(__file__).parent / "fixtures/legacy_1m_strategy.yaml")
 TEST_STRATEGY_IDENTITY = build_strategy_identity(TEST_STRATEGY_CONFIG)
 TEST_PIPELINE_CONFIG = TEST_STRATEGY_CONFIG.model_dump(mode="json")
 

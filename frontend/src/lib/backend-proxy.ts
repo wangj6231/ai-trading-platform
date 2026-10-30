@@ -20,7 +20,20 @@ function proxyError(status: number, code: string, message: string): NextResponse
   return NextResponse.json({ error: { code, message } }, { status });
 }
 
-export async function proxyBackend(path: string, init?: RequestInit): Promise<NextResponse> {
+const requestHeaderNames = ["Authorization", "Idempotency-Key", "If-Match", "X-Request-ID", "X-Correlation-ID"];
+const responseHeaderNames = ["Content-Type", "Cache-Control", "ETag", "X-Request-ID", "X-Correlation-ID"];
+
+export function forwardBackendHeaders(incoming?: Headers, supplied?: HeadersInit): Headers {
+  const headers = new Headers(supplied);
+  if (!headers.has("Accept")) headers.set("Accept", "application/json");
+  for (const name of requestHeaderNames) {
+    const value = incoming?.get(name);
+    if (value !== null && value !== undefined) headers.set(name, value);
+  }
+  return headers;
+}
+
+export async function proxyBackend(path: string, init?: RequestInit, incoming?: Headers): Promise<NextResponse> {
   const controller = new AbortController();
   const callerSignal = init?.signal;
   const abortFromCaller = () => controller.abort(callerSignal?.reason);
@@ -40,17 +53,18 @@ export async function proxyBackend(path: string, init?: RequestInit): Promise<Ne
     const response = await fetch(`${backendUrl}${path}`, {
       ...init,
       cache: "no-store",
-      headers: {
-        Accept: "application/json",
-        ...(init?.headers ?? {}),
-      },
+      headers: forwardBackendHeaders(incoming, init?.headers),
       signal: controller.signal,
     });
     const text = await response.text();
-    const contentType = response.headers.get("content-type");
+    const headers = new Headers();
+    for (const name of responseHeaderNames) {
+      const value = response.headers.get(name);
+      if (value !== null) headers.set(name, value);
+    }
     return new NextResponse(text || null, {
       status: response.status,
-      headers: contentType ? { "Content-Type": contentType } : undefined,
+      headers,
     });
   } catch {
     if (timedOut) {
@@ -81,5 +95,5 @@ export async function proxyJsonPost(request: Request, path: string): Promise<Nex
     headers: { "Content-Type": "application/json" },
     body,
     signal: request.signal,
-  });
+  }, request.headers);
 }

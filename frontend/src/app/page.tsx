@@ -1,5 +1,5 @@
-import { TradingDashboard } from "@/components/trading-dashboard";
+import { DashboardProduct } from "@/components/product/dashboard-product";
 
 export default function Home() {
-  return <TradingDashboard />;
+  return <DashboardProduct />;
 }

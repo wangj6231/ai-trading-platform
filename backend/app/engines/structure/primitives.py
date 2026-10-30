@@ -1,3 +1,5 @@
+from bisect import bisect_right
+from collections import deque
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -174,6 +176,33 @@ class _ZoneAccumulator:
     source_pivot_timestamps: list[datetime] = field(default_factory=list)
 
 
+def _zone_match_interval(
+    anchors: Sequence[tuple[Decimal, int, _ZoneAccumulator]],
+    price: Decimal,
+    tolerance: Decimal,
+) -> tuple[int, int]:
+    # Compare the original Decimal subtraction/abs predicate. Computing new
+    # price +/- tolerance endpoints would introduce different rounding behavior.
+    lo, hi = 0, len(anchors)
+    while lo < hi:
+        mid = (lo + hi) // 2
+        anchor = anchors[mid][0]
+        if anchor < price and abs(price - anchor) > tolerance:
+            lo = mid + 1
+        else:
+            hi = mid
+    left = lo
+    lo, hi = left, len(anchors)
+    while lo < hi:
+        mid = (lo + hi) // 2
+        anchor = anchors[mid][0]
+        if anchor > price and abs(price - anchor) > tolerance:
+            hi = mid
+        else:
+            lo = mid + 1
+    return left, lo
+
+
 def _build_zones(
     swings: Sequence[ConfirmedSwing],
     kind: ZoneKind,
@@ -186,11 +215,13 @@ def _build_zones(
     tolerance = config.tick_size * Decimal(config.zone_merge_tolerance_ticks)
     padding = config.tick_size * Decimal(config.zone_padding_ticks)
     zones: list[_ZoneAccumulator] = []
+    anchors: list[tuple[Decimal, int, _ZoneAccumulator]] = []
 
     for swing in eligible:
+        left, right = _zone_match_interval(anchors, swing.price, tolerance)
         matches = [
             (abs(swing.price - zone.anchor_price), index, zone)
-            for index, zone in enumerate(zones)
+            for _, index, zone in anchors[left:right]
             if abs(swing.price - zone.anchor_price) <= tolerance
         ]
         if matches:
@@ -209,6 +240,9 @@ def _build_zones(
                 updated_at=swing.confirmed_at,
             )
             zones.append(zone)
+            position = len(zones) - 1
+            insertion = bisect_right(anchors, (zone.anchor_price, position), key=lambda item: item[:2])
+            anchors.insert(insertion, (zone.anchor_price, position, zone))
 
         zone.source_swing_ids.append(swing.swing_id)
         zone.source_pivot_timestamps.append(swing.pivot_timestamp)
@@ -297,22 +331,34 @@ def _detect_structure_breaks(
     broken_structure_ids: set[str] = set()
     candle_duration = timeframe_duration(timeframe)
     buffer = config.tick_size * Decimal(config.structure_break_buffer_ticks)
+    # _detect_swings emits pivots in index order with a fixed right window,
+    # hence confirmation order is also ascending. Consume each confirmation
+    # once, preserving eligibility at bar OPEN and the original per-side order.
+    frontier = 0
+    trend_tail: dict[SwingKind, deque[ConfirmedSwing]] = {
+        kind: deque(maxlen=config.trend_points_per_side) for kind in SwingKind
+    }
+    unbroken: dict[SwingKind, list[ConfirmedSwing]] = {kind: [] for kind in SwingKind}
+    trend_before_break: TrendState | None = None
 
     for candle in candles:
-        trend_swings = [swing for swing in swings if swing.confirmed_at <= candle.timestamp]
-        trend_before_break = _classify_trend(trend_swings, config)
-        up_level = _latest_unbroken_swing(
-            swings,
-            SwingKind.HIGH,
-            candle.timestamp,
-            broken_structure_ids,
-        )
-        down_level = _latest_unbroken_swing(
-            swings,
-            SwingKind.LOW,
-            candle.timestamp,
-            broken_structure_ids,
-        )
+        previous_frontier = frontier
+        while frontier < len(swings) and swings[frontier].confirmed_at <= candle.timestamp:
+            swing = swings[frontier]
+            frontier += 1
+            trend_tail[swing.kind].append(swing)
+            unbroken[swing.kind].append(swing)
+        # The unchanged helper depends only on these confirmed tails and frozen
+        # config. A break does not change either. Recompute at every new
+        # confirmation, including the exact original candle-open boundary.
+        if trend_before_break is None or previous_frontier != frontier:
+            trend_swings = list(trend_tail[SwingKind.HIGH]) + list(trend_tail[SwingKind.LOW])
+            trend_before_break = _classify_trend(trend_swings, config)
+        for values in unbroken.values():
+            while values and values[-1].swing_id in broken_structure_ids:
+                values.pop()
+        up_level = unbroken[SwingKind.HIGH][-1] if unbroken[SwingKind.HIGH] else None
+        down_level = unbroken[SwingKind.LOW][-1] if unbroken[SwingKind.LOW] else None
 
         if config.structure_break_basis is StructureBreakBasis.CLOSE:
             up_value = candle.close

@@ -2,6 +2,9 @@
   "name": "ai-trading-platform-frontend",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=20.19.0"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -9,6 +12,7 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:browser": "playwright test",
+    "test:product": "playwright test --config playwright.product.config.ts",
     "test:browser:serve": "vite --config tests/browser/vite.config.ts",
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",

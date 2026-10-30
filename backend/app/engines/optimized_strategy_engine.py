@@ -9,21 +9,15 @@ same inherited orchestration method.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import datetime
 from decimal import Decimal
 from typing import Hashable
 
 from app.engines.strategy_engine import ConcreteDeterministicStrategyEngine
-from app.market_data.timeframes import timeframe_duration
+from app.market_data.timeframes import timeframe_bucket_start, timeframe_duration
 from app.schemas.candle import Candle
 from app.schemas.strategy import DeterministicStrategyPipelineConfig
 from app.schemas.types import MarketSymbol, Timeframe
-
-
-def _bucket_start(timestamp: datetime, duration: timedelta) -> datetime:
-    seconds = int(duration.total_seconds())
-    epoch_seconds = int(timestamp.timestamp())
-    return datetime.fromtimestamp((epoch_seconds // seconds) * seconds, tz=UTC)
 
 
 @dataclass
@@ -71,7 +65,7 @@ class IncrementalResamplingState:
             for timeframe in self.target_timeframes:
                 target = self.targets[timeframe]
                 duration = timeframe_duration(timeframe)
-                bucket = _bucket_start(candle.timestamp, duration)
+                bucket = timeframe_bucket_start(candle.timestamp, timeframe)
                 constituents = target.buckets.setdefault(bucket, [])
                 constituents.append(candle)
                 source_duration = timeframe_duration(self.source_timeframe)

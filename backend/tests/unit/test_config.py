@@ -39,7 +39,7 @@ def test_runtime_pipeline_config_loads_versioned_crypto_configs() -> None:
 
     assert set(configs) == {MarketSymbol.BTCUSDT, MarketSymbol.ETHUSDT}
     assert {config.signal_timeframe for config in configs.values()} == {
-        Timeframe.ONE_MINUTE
+        Timeframe.FIFTEEN_MINUTES
     }
     assert config.schema_version == "1"
 

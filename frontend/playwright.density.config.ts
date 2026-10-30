@@ -1,0 +1,2 @@
+import { defineConfig } from "@playwright/test";
+export default defineConfig({ testDir: "./tests/density-browser", outputDir: "./node_modules/.cache/density-results", workers: 1, retries: 0, timeout: 300_000, reporter: "list", use: { browserName: "chromium", channel: "chrome", baseURL: "http://127.0.0.1:4180", viewport: { width: 1440, height: 1100 } }, webServer: { command: "npx vite --config tests/density-browser/vite.config.ts", url: "http://127.0.0.1:4180/density.html", reuseExistingServer: false, timeout: 30_000 } });

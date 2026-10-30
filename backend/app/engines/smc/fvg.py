@@ -336,10 +336,12 @@ def analyze_fvg(
     _validate_inputs(candles, timeframe, config, atr_result)
     candle_duration = timeframe_duration(timeframe)
     zones: list[_ZoneState] = []
+    active_zones: list[_ZoneState] = []
     rejections: list[FVGRejection] = []
 
     for index, bar in enumerate(candles):
         confirmed_at = bar.timestamp + candle_duration
+        previous_zone_count = len(zones)
 
         if index >= 2:
             atr_at_open = (
@@ -408,8 +410,11 @@ def analyze_fvg(
                         )
                     )
 
+        # Newly formed FVGs retain their original archive position. Terminal
+        # objects remain in that archive, but their no-op updates need no replay.
+        active_zones.extend(zones[previous_zone_count:])
         new_ifvgs: list[_ZoneState] = []
-        for zone in list(zones):
+        for zone in active_zones:
             # Candle timestamps are interval starts and confirmed_at is the exclusive
             # interval end. Equality therefore identifies the immediately next bar.
             if bar.timestamp < zone.confirmed_at:
@@ -418,6 +423,9 @@ def analyze_fvg(
             if new_ifvg is not None:
                 new_ifvgs.append(new_ifvg)
         zones.extend(new_ifvgs)
+        active_zones = [zone for zone in active_zones
+            if zone.lifecycle_state not in TERMINAL_STATES]
+        active_zones.extend(new_ifvgs)
 
     return FVGAnalysisResult(
         timeframe=timeframe,

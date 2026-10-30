@@ -35,7 +35,7 @@ export function MacdChart({ state }: { state: LoadState<MacdPoint[]> }) {
   return (
     <section className="macd-panel">
       <div className="subchart-heading">
-        <div><span>MACD</span><small>BACKEND CONFIG</small></div>
+        <div><span>MACD</span><small>STRATEGY · CLOSED 15M · BACKEND CONFIG</small></div>
         <div className="macd-legend"><span className="macd-key blue">MACD</span><span className="macd-key gold">SIGNAL</span><span className="macd-key green">HISTOGRAM</span></div>
       </div>
       <div className="macd-chart" ref={rootRef}>
