@@ -1,4 +1,4 @@
-FROM rust:1.99.0-bookworm AS rust-toolchain
+FROM rust:1.99.1-bookworm AS rust-toolchain
 
 FROM python:3.12-slim-bookworm AS native-build
 COPY --from=rust-toolchain /usr/local/cargo /usr/local/cargo
