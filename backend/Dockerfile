@@ -1,6 +1,6 @@
 FROM rust:1.99.0-bookworm AS rust-toolchain
 
-FROM python:3.12-slim-bookworm AS native-build
+FROM python:3.15-slim-bookworm AS native-build
 COPY --from=rust-toolchain /usr/local/cargo /usr/local/cargo
 COPY --from=rust-toolchain /usr/local/rustup /usr/local/rustup
 ENV CARGO_HOME=/usr/local/cargo RUSTUP_HOME=/usr/local/rustup PATH=/usr/local/cargo/bin:$PATH
@@ -10,7 +10,7 @@ COPY rust/utc_alignment /native
 RUN pip install --no-cache-dir maturin==1.15.0 \
     && maturin build --locked --release --compatibility linux --manifest-path /native/Cargo.toml --out /wheels
 
-FROM python:3.12-slim-bookworm
+FROM python:3.15-slim-bookworm
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
